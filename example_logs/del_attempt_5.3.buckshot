@@ -1,0 +1,92 @@
+phase I, 2 charges
+
+round I.1
+dealer gets phone, cuffs
+dealer loads 2 live, 4 blank
+player shoots dealer, blank
+!check shells = 2 live, 3 blank
+!check odds
+# dealer's next move would be to shoot the player for a (0.1 player, 0.6 tie, 0.3 dealer) result
+# if instead they shot themself, they'd get a (0.3, 0.6, 0.1) result
+
+# dealer knows there's a 2/5 (40%) chance for the next shell to be live, so they would want to shoot themself for a chance at another turn
+# shell possibilities: llbbb llbbb llbbb llbbb llbbb
+
+dealer uses phone
+dealer uses cuffs
+
+# suppose they learn that the third shell is live:
+    # shell possibilities: lbbb lbbb l lbbb lbbb
+    # then there's a 1/4 (25%) chance for the next shell to be live
+# suppose they learn that the third shell is blank
+    # shell possibilities: llbb llbb b llbb llbb
+    # then there's a 1/2 (50%) chance for the next shell to be live
+# so if the dealer happens to choose to shoot the player on the 50% chance that they get another turn, this would be evidence that they heard that the third shell is blank
+# (of course, if the dealer is aware of this strategy, since the odds are even, they'll choose the option that's the same as before so that they give no information)
+
+dealer shoots player, blank
+
+!check shells = 2 live, 2 blank
+# without DEL, the player would think that each of the four shells has a 50% probability of being live
+    # shell possibilities: llbb llbb llbb llbb
+# but with DEL, the player thinks the next is 67% live, then 100% blank, then 67% live, then 67% live
+    # shell possibilities: llb b llb llb
+
+dealer shoots player, live
+!check player charges = 1
+
+!check shells = 1 live, 2 blank
+#!check odds
+
+# without DEL, the player would think that each of the three shells has a 33% chance of being live
+# shell possibilities: lbb lbb lbb
+# if the player shoots themself:
+    # if live (33%), they lose
+    # if blank (67%):
+        # shell possibilities: lb lb
+        # if player shoots themself:
+            # if live (50%), player loses
+            # if blank (50%), next shell is live, player shoots dealer, continue to next round
+        # if player shoots dealer:
+            # if live (50%), player damages dealer, the next shell is blank, continue to next round
+            # if blank (50%), the next shell is live, dealer shoots player, player loses
+    # so:
+    #  33% + (50% * 67%) = 66% that player loses
+    #  (50% * 67%) = 33% dealer takes one damage, continue to next round
+# if the player shoots the dealer:
+    # if live (33%), player damages dealer, the rest are blanks, continue to next round
+    # if blank (67%):
+        # shell possibilities: lb lb
+        # if dealer shoots themself:
+            # if live (50%), they damage themself, next shell is blank, continue to next round
+            # if blank (50%), the next is live, dealer shoots player, player loses
+        # if dealer shoots player:
+            # if live (50%), player loses
+            # if blank (50%), the next is live, player shoots dealer, continue to next round
+    # so:
+    #  67% * 50% = 33% that player loses
+    #  33% + (50% * 67%) = 67% that dealer takes one damage, continue to next round
+# so player should shoot the dealer
+
+# but with DEL, the player thinks the next is 100% blank, then 50% live, then 50% live
+# shell possibilities: b lb lb
+# if player shoots themself, it's blank, then
+    # if the player shoots themself:
+        # if live (50%), player loses
+        # if blank (50%), the next is live, player shoots dealer, dealer takes one damage, continue to next round
+    # if the player shoots the dealer:
+        # if live (50%), dealer takes one damage, last round is blank, continue to next round
+        # if blank (50%), next round is live, dealer shoots player, player loses
+# if the player shoots the dealer, it's blank, then
+    # if the dealer shoots the player:
+        # if live (50%), player loses
+        # if blank (50%), next is live, player shoots dealer, dealer takes one damage, continue to next round
+    # if the dealer shoots themself
+        # if live (50%), dealer takes one damage, next is blank, continue to next round
+        # if blank (50%), next is live, dealer shoots player, player loses
+# so:
+    # 50% that player loses
+    # 50% that dealer takes one damage, continue to next round
+
+# if reasoning without DEL, we choose to shoot the dealer, expecting 67% survival chance
+# but if reasoning with DEL, we can choose whichever, expecting 50% survival chance
