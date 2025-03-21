@@ -104,6 +104,15 @@ class RoundState:
 
     def raw_eject_shell(self, is_live):
         self.assert_future_shell(0, is_live)
+
+        # if the information we see contradicts any dealer known_shells theories, we can eliminate those
+        i = len(self.past_shells)
+        num_theories_before = len(self.dealer_known_shells_theories)
+        self.dealer_known_shells_theories = [t for t in self.dealer_known_shells_theories if t.get(i, is_live) == is_live ]
+        num_theories_eliminated = len(self.dealer_known_shells_theories) - num_theories_before
+        if num_theories_eliminated:
+            print("eliminated", num_theories_eliminated, "theories about the dealer's knowledge!", len(self.dealer_known_shells_theories), "remaining") # DEBUG
+
         self.past_shells.append(is_live)
 
 @dataclass
@@ -169,6 +178,7 @@ class PhaseState:
             self.num_completed_rounds += 1
 
     def best_move(self, depth=1) -> Tuple[str | None, Tuple[float, float, float]]:
+        # FIXME: update to account for current theories of dealer's knowledge
         if self.players["dealer"].charges <= 0:
             print("\t" * depth, "player wins") # DEBUG
             return (None, (1.0, 0.0, 0.0))
@@ -222,6 +232,8 @@ class PhaseState:
         return (opponent_name, chances_after_shooting[opponent_name])
 
     def raw_shoot(self, target_name, is_live):
+
+        # FIXME compare against theories
 
         # check if this is possible given what we know
         self.round.assert_future_shell(0, is_live)
