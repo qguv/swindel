@@ -3,7 +3,7 @@
 from argparse import ArgumentParser, FileType
 from collections import OrderedDict
 from copy import deepcopy
-from sys import exit, stderr
+import sys
 
 from exceptions import GameError, TurnError
 from game_state import GameState, PhaseState, Player, RoundState
@@ -60,28 +60,35 @@ multiplayer_items = set([
     Items.REMOTE,
 ])
 
+
 class LogParseError(Exception):
     '''exited without validating the entire log'''
-    pass
 
 
-class InvalidLine(LogParseError):
-    pass
+class NoSuchPlayer(LogParseError):
+    '''log refers to a nonexistent player'''
+    def __init__(self, player_name, *args, **kwargs):
+        msg = f"no such player {player_name}"
+        super().__init__(msg, *args, **kwargs)
+
+
+class WrongPhase(LogParseError):
+    '''log refers to a nonexistent player'''
+    def __init__(self, phase_name, *args, **kwargs):
+        msg = f"expected a round in phase {phase_name}"
+        super().__init__(msg, *args, **kwargs)
 
 
 class NoMatch(LogParseError):
     '''line didn't match any known pattern'''
-    pass
 
 
 class SetupError(LogParseError):
     '''couldn't start the game because setup was incomplete'''
-    pass
 
 
 class CheckFailed(LogParseError):
     '''!check line failed'''
-    pass
 
 
 def parse_line(state: GameState, line):
@@ -230,7 +237,7 @@ def check_query_line(state: GameState, words) -> None:
                     raise CheckFailed(f"actually, {expected_winner_name} has 0 charges because no phase is in progress (yet/anymore)")
                 return
             if expected_winner_name not in state.phase.players:
-                raise InvalidLine(f"no such player {expected_winner_name}")
+                raise NoSuchPlayer(expected_winner_name)
             player_charges = state.phase.players[expected_winner_name].charges
             if player_charges != int(expected_value):
                 raise CheckFailed(f"actually, {expected_winner_name} has {player_charges} charges")
@@ -242,7 +249,7 @@ def check_query_line(state: GameState, words) -> None:
                     raise CheckFailed(f"actually, {expected_winner_name} has 0 charges because no phase is in progress (yet/anymore)")
                 return
             if expected_winner_name not in state.phase.players:
-                raise InvalidLine(f"no such player {expected_winner_name}")
+                raise NoSuchPlayer(expected_winner_name)
             player_charges = state.phase.players[expected_winner_name].charges
             if player_charges != int(expected_value):
                 raise CheckFailed(f"actually, {expected_winner_name} has {player_charges} charges")
@@ -277,7 +284,7 @@ def check_query_line(state: GameState, words) -> None:
                 case ["phase", expected_phase_name]:
                     expected_phase_num = len(expected_phase_name) - 1
                     if expected_phase_num != state.num_completed_phases - 1:
-                        raise InvalidLine(f"expected a round in phase {"I" * (state.num_completed_phases)}")
+                        raise WrongPhase("I" * state.num_completed_phases)
                     winner_name = state.winner_names_by_phase[expected_phase_num]
                     if expected_winner_name != winner_name:
                         raise CheckFailed(f"actually, {winner_name} won phase {expected_phase_name}")
@@ -303,7 +310,7 @@ def parse_game_line(old_state: GameState, words) -> GameState:
             # parse line
             if target_name == "self":
                 target_name = player_name
-            is_live = (_shell_type == "live")
+            is_live = _shell_type == "live"
 
             new_state.shoot(target_name, is_live)
 
@@ -311,8 +318,8 @@ def parse_game_line(old_state: GameState, words) -> GameState:
             item = items_by_name[item_name]
             try:
                 new_state.phase.players[player_name].items.remove(item)
-            except ValueError:
-                raise GameError(f"{player_name} doesn't have {item_name}")
+            except ValueError as e:
+                raise GameError(f"{player_name} doesn't have {item_name}") from e
 
             match words:
 
@@ -327,14 +334,13 @@ def parse_game_line(old_state: GameState, words) -> GameState:
                     if player_name == "player":
                         raise LogParseError("missing information: what did the player see?")
                     # TODO: something epistemic
-                    pass
 
                 case [player_name, "uses", "phone", ",", "hears", _shell_cardinal, _shell_type]:
                     is_live = _shell_type == "live"
                     try:
                         shells_from_now = cardinal_to_ordinal[_shell_cardinal]
-                    except KeyError:
-                        raise LogParseError("unknown cardinal (use 'second', 'third', etc.)")
+                    except KeyError as e:
+                        raise LogParseError("unknown cardinal (use 'second', 'third', etc.)") from e
                     if player_name != "player":
                         raise LogParseError("too much information: we shouldn't know what they see")
                     new_state.phase.round.learn_future_shell(shells_from_now, is_live)
@@ -350,7 +356,6 @@ def parse_game_line(old_state: GameState, words) -> GameState:
                     if player_name == "player":
                         raise LogParseError("missing information: what did the player see?")
                     # TODO: something epistemic
-                    pass
 
                 case [player_name, "uses", "glass", ",", "sees", _shell_type]:
                     if player_name != "player":
@@ -377,15 +382,14 @@ def parse_logfile(f):
         try:
             game_state = parse_line(game_state, line)
         except Exception as e:
-            print(f"{logfile.name} failed", file=stderr)
-            print("line", i+1, file=stderr)
-            print(line.strip(), file=stderr)
-            if isinstance(e, LogParseError) or isinstance(e, GameError):
-                print(e, file=stderr)
+            print(f"{f.name} failed", file=sys.stderr)
+            print("line", i+1, file=sys.stderr)
+            print(line.strip(), file=sys.stderr)
+            if isinstance(e, (LogParseError, GameError)):
+                print(e, file=sys.stderr)
                 return
-            else:
-                raise e
-    print(f"{logfile.name} ok", file=stderr)
+            raise e
+    print(f"{f.name} ok", file=sys.stderr)
     return game_state
 
 
@@ -395,9 +399,12 @@ def parse_args():
     return parser.parse_args()
 
 
-if __name__ == "__main__":
-    args = parse_args()
+def main(args):
     for logfile in args.LOGFILE:
         game = parse_logfile(logfile)
         if not game:
-            exit(1)
+            sys.exit(1)
+
+
+if __name__ == "__main__":
+    main(parse_args())

@@ -46,10 +46,10 @@ class RoundState:
                 raise GameError(f"actually, player knows this shell to be {"live" if known_shell_is_live else "blank"}")
 
         # does it contradict with something we can deduce based on shell count
-        except KeyError:
+        except KeyError as e:
             remaining_matching_shells = self.remaining_live_shells() if is_live else self.remaining_blank_shells()
             if remaining_matching_shells < 1:
-                raise GameError(f"actually, there are no {"live" if is_live else "blank"} shells left")
+                raise GameError(f"actually, there are no {"live" if is_live else "blank"} shells left") from e
 
     def chance_shell_is_live(self):
 
@@ -67,7 +67,7 @@ class RoundState:
             return self.remaining_live_shells() / self.total_shells()
 
 
-    def _eject_shell(self, is_live):
+    def raw_eject_shell(self, is_live):
         self.assert_future_shell(0, is_live)
         self.past_shells.append(is_live)
 
@@ -86,7 +86,7 @@ class PhaseState:
     num_completed_rounds: int = 0
 
     def eject_shell(self, is_live):
-        self.round._eject_shell(is_live)
+        self.round.raw_eject_shell(is_live)
 
         # if no shells left, end round
         if len(self.round.past_shells) == self.round.total_shells():
@@ -112,25 +112,25 @@ class PhaseState:
             shoot_dealer_live_win_chance = 0.0
             if live_chance > 0.0:
                 shoot_dealer_live = deepcopy(self)
-                shoot_dealer_live._shoot("dealer", True)
+                shoot_dealer_live.raw_shoot("dealer", True)
                 shoot_dealer_live_win_chance = shoot_dealer_live.win_probability(player_name, depth=depth+1) * live_chance
 
             shoot_dealer_blank_win_chance = 0.0
             if blank_chance > 0.0:
                 shoot_dealer_blank = deepcopy(self)
-                shoot_dealer_blank._shoot("dealer", False)
+                shoot_dealer_blank.raw_shoot("dealer", False)
                 shoot_dealer_blank_win_chance = shoot_dealer_blank.win_probability(player_name, depth=depth+1) * blank_chance
 
             shoot_player_live_win_chance = 0.0
             if live_chance > 0.0:
                 shoot_player_live = deepcopy(self)
-                shoot_player_live._shoot("player", True)
+                shoot_player_live.raw_shoot("player", True)
                 shoot_player_live_win_chance = shoot_player_live.win_probability(player_name, depth=depth+1) * live_chance
 
             shoot_player_blank_win_chance = 0.0
             if blank_chance > 0.0:
                 shoot_player_blank = deepcopy(self)
-                shoot_player_blank._shoot("player", False)
+                shoot_player_blank.raw_shoot("player", False)
                 shoot_player_blank_win_chance = shoot_player_blank.win_probability(player_name, depth=depth+1) * blank_chance
         except GameError:
             return 0.0
@@ -143,7 +143,7 @@ class PhaseState:
             print(" " * depth, "player" if self.round.is_players_turn else "dealer", "shoots dealer")
         return max(shoot_dealer_win_chance, shoot_player_win_chance)
 
-    def _shoot(self, target_name, is_live):
+    def raw_shoot(self, target_name, is_live):
 
         # check if this is possible given what we know
         self.round.assert_future_shell(0, is_live)
@@ -188,7 +188,7 @@ class GameState:
     max_items: int = 8
 
     def shoot(self, target_name, is_live):
-        self.phase._shoot(target_name, is_live)
+        self.phase.raw_shoot(target_name, is_live)
         non_target_name = "dealer" if target_name == "player" else "player"
         if self.phase.players[target_name].charges <= 0:
 
