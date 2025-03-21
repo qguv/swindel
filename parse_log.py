@@ -6,7 +6,7 @@ from copy import deepcopy
 import sys
 
 from exceptions import GameError, TurnError
-from game_state import GameState, PhaseState, Player, RoundState
+from game_state import GameState, PhaseState, Player, RoundState, LIVE_SHELL, BLANK_SHELL
 from items import Items
 
 cardinal_to_ordinal = {
@@ -227,8 +227,8 @@ def parse_round_setup_line(old_state: GameState, words) -> GameState:
 def check_query_line(state: GameState, words) -> None:
     match words:
 
-        case ["!check", player_name, "odds"]:
-            print(player_name, "odds:", state.phase.win_probability(player_name))
+        case ["!check", "odds"]:
+            print("odds:", ", ".join(f"{name}:{odds}" for name, odds in zip(("player", "draw", "dealer"), state.phase.win_probability())))
 
         case ["!check", expected_winner_name, "charges", "=", _expected_value]:
             expected_value = int(_expected_value)
@@ -274,8 +274,8 @@ def check_query_line(state: GameState, words) -> None:
                 if expected_num_live != 0 or expected_num_blank != 0:
                     raise CheckFailed("actually, there are no shells because no round is in progress (yet/anymore)")
                 return
-            num_live = state.phase.round.remaining_live_shells()
-            num_blank = state.phase.round.remaining_blank_shells()
+            num_live = state.phase.round.remaining_shells(of_type=LIVE_SHELL)
+            num_blank = state.phase.round.remaining_shells(of_type=BLANK_SHELL)
             if num_live != expected_num_live or num_blank != expected_num_blank:
                 raise CheckFailed(f"actually, there are {num_live} live, {num_blank} blank shells left")
 

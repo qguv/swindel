@@ -1,13 +1,16 @@
-from collections import OrderedDict
+from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional, Set, Tuple
 
 from exceptions import GameError
 from items import Items
 
 # true is live, false is blank
 type ShellType = bool
+LIVE_SHELL = True
+BLANK_SHELL = False
+ANY_SHELL = None
 
 @dataclass
 class RoundState:
@@ -19,14 +22,30 @@ class RoundState:
     handcuffed_player_names: Set[str] = field(default_factory=set)
     known_shells: Dict[int, ShellType] = field(default_factory=dict)
 
-    def remaining_live_shells(self) -> int:
-        return self.total_live_shells - sum(1 for is_live in self.past_shells if is_live)
+    def current_player_name(self, _reverse=False) -> str:
+        return "player" if (self.is_players_turn != _reverse) else "dealer"
 
-    def remaining_blank_shells(self) -> int:
-        return self.total_blank_shells - sum(1 for is_live in self.past_shells if not is_live)
+    def current_opponent_name(self) -> str:
+        return self.current_player_name(_reverse=True)
 
-    def total_shells(self) -> int:
-        return self.total_live_shells + self.total_blank_shells
+    def remaining_shells(self, *, of_type=None) -> int:
+        if of_type is None:
+            return self.total_shells() - len(self.past_shells)
+        return (
+            self.total_shells(of_type)
+            - sum(1 for past_shell_type in self.past_shells if past_shell_type == of_type)
+        )
+
+    def remaining_known_shells(self, of_type=None) -> int:
+        return sum(1 for i, known_shell_is_live in self.known_shells.items() if of_type is None or of_type == known_shell_is_live and i >= len(self.past_shells))
+
+    def remaining_unknown_shells(self, of_type=None) -> int:
+        return self.remaining_shells(of_type=of_type) - self.remaining_known_shells(of_type=of_type)
+
+    def total_shells(self, of_type=None) -> int:
+        if of_type is None:
+            return self.total_live_shells + self.total_blank_shells
+        return self.total_live_shells if of_type else self.total_blank_shells
 
     def learn_future_shell(self, shells_from_now, is_live):
         self.assert_future_shell(shells_from_now, is_live)
@@ -42,21 +61,26 @@ class RoundState:
         # does it contradict with something we learned
         try:
             known_shell_is_live = self.known_shells[i]
+        except KeyError:
+            pass
+        else:
             if known_shell_is_live != is_live:
                 raise GameError(f"actually, player knows this shell to be {"live" if known_shell_is_live else "blank"}")
 
-        # does it contradict with something we can deduce based on shell count
-        except KeyError as e:
-            remaining_matching_shells = self.remaining_live_shells() if is_live else self.remaining_blank_shells()
-            if remaining_matching_shells < 1:
-                raise GameError(f"actually, there are no {"live" if is_live else "blank"} shells left") from e
+        # does it contradict with something we can deduce based on public knowledge of past shells?
+        if self.remaining_shells(of_type=is_live) < 1:
+            raise GameError(f"actually, there are no {"live" if is_live else "blank"} shells left")
+
+        # does it contradict with something we can deduce based on current knowledge of future shells?
+        if self.remaining_unknown_shells(of_type=is_live) < 1:
+            raise GameError(f"actually, all {"live" if is_live else "blank"} shells are accounted for")
 
     def chance_shell_is_live(self):
 
         # are there enough shells?
         i = len(self.past_shells)
         if i >= self.total_shells():
-            raise GameError("actually, there aren't enough shells to learn that!")
+            raise GameError("actually, there are no shells left to shoot!")
 
         # have we already learned it?
         try:
@@ -64,7 +88,7 @@ class RoundState:
 
         # does it contradict with something we can deduce based on shell count
         except KeyError:
-            return self.remaining_live_shells() / self.total_shells()
+            return self.remaining_unknown_shells(of_type=LIVE_SHELL) / self.remaining_unknown_shells()
 
 
     def raw_eject_shell(self, is_live):
@@ -76,6 +100,30 @@ class Player:
     charges: int
     items: List[Items] = field(default_factory=list)
     is_critical: bool = False
+
+def player_preference(chances: Tuple[float, float, float]):
+    '''player prefers a player win, otherwise a draw'''
+    print(chances)
+    return (chances[0], chances[1])
+
+def dealer_preference(chances: Tuple[float, float, float]):
+    '''dealer prefers a dealer win, otherwise a draw'''
+    return (chances[2], chances[1])
+
+def about_equal(*xs, e=0.0001):
+    return len(xs) < 2 or all(
+        abs(x - xs[0]) < e
+        for x in xs[1:]
+    )
+
+def elements_about_equal(*ts, **kwargs):
+    return len(ts) < 2 or all(
+        about_equal(nth_elements, **kwargs)
+        for nth_elements in zip(*ts)
+    )
+
+def dmap(d, f):
+    return { k: f(v) for k, v in d.items() }
 
 @dataclass
 class PhaseState:
@@ -93,55 +141,51 @@ class PhaseState:
             self.round = None
             self.num_completed_rounds += 1
 
-    def win_probability(self, player_name, depth=1):
+    def win_probability(self, depth=1) -> Tuple[float, float, float]:
+        if self.players["dealer"].charges <= 0:
+            print("\t" * depth, "player wins") # DEBUG
+            return (1.0, 0.0, 0.0)
+        if self.players["player"].charges <= 0:
+            print("\t" * depth, "dealer wins") # DEBUG
+            return (0.0, 0.0, 1.0)
         if self.round is None:
-            print(" " * depth, "no winner") # DEBUG
-            return 0.0
-        opponent_name = "dealer" if player_name == "player" else "player"
-        if self.players[player_name].charges <= 0:
-            print(" " * depth, opponent_name, "wins") # DEBUG
-            return 0.0
-        if self.players[opponent_name].charges <= 0:
-            print (" " * depth, player_name, "wins") # DEBUG
-            return 1.0
+            print("\t" * depth, "it's a tie") # DEBUG
+            return (0.0, 1.0, 0.0)
+
         live_chance = self.round.chance_shell_is_live()
         blank_chance = 1.0 - live_chance
 
-        # FIXME not correctly simulating opponent turns by reversing polarity!!!
-        try:
-            shoot_dealer_live_win_chance = 0.0
-            if live_chance > 0.0:
-                shoot_dealer_live = deepcopy(self)
-                shoot_dealer_live.raw_shoot("dealer", True)
-                shoot_dealer_live_win_chance = shoot_dealer_live.win_probability(player_name, depth=depth+1) * live_chance
+        player_name = self.round.current_player_name()
+        opponent_name = self.round.current_opponent_name()
 
-            shoot_dealer_blank_win_chance = 0.0
-            if blank_chance > 0.0:
-                shoot_dealer_blank = deepcopy(self)
-                shoot_dealer_blank.raw_shoot("dealer", False)
-                shoot_dealer_blank_win_chance = shoot_dealer_blank.win_probability(player_name, depth=depth+1) * blank_chance
+        chances_after_shooting = defaultdict(list)
+        for target_name in ("dealer", "player"):
+            print("\t" * depth, f"if {player_name} shot {"self" if target_name == player_name else target_name}...")
+            for is_live, chance in ((True, live_chance), (False, blank_chance)):
+                result = deepcopy(self)
+                try:
+                    result.raw_shoot(target_name, is_live)
+                except GameError as e:
+                    print("\t" * (depth+1), f"(the shell can't be {"live" if is_live else "blank"} because {e})")
+                else:
+                    print("\t" * (depth+1), f"...and the shell were {"live" if is_live else "blank"}, then:")
+                    sub = result.win_probability(depth=depth+2)
+                    print("\t" * (depth+1), sub)
+                    chances_after_shooting[target_name].append(
+                        tuple(chance * x for x in sub)
+                    )
+            chances_after_shooting[target_name] = tuple(map(sum, zip(*chances_after_shooting[target_name])))
 
-            shoot_player_live_win_chance = 0.0
-            if live_chance > 0.0:
-                shoot_player_live = deepcopy(self)
-                shoot_player_live.raw_shoot("player", True)
-                shoot_player_live_win_chance = shoot_player_live.win_probability(player_name, depth=depth+1) * live_chance
+        preference_after_shooting = dmap(chances_after_shooting, player_preference if self.round.is_players_turn else dealer_preference)
 
-            shoot_player_blank_win_chance = 0.0
-            if blank_chance > 0.0:
-                shoot_player_blank = deepcopy(self)
-                shoot_player_blank.raw_shoot("player", False)
-                shoot_player_blank_win_chance = shoot_player_blank.win_probability(player_name, depth=depth+1) * blank_chance
-        except GameError:
-            return 0.0
-
-        shoot_dealer_win_chance = shoot_dealer_live_win_chance + shoot_dealer_blank_win_chance
-        shoot_player_win_chance = shoot_player_live_win_chance + shoot_player_blank_win_chance
-        if shoot_player_win_chance > shoot_dealer_win_chance:
-            print(" " * depth, "player" if self.round.is_players_turn else "dealer", "shoots player")
-        else:
-            print(" " * depth, "player" if self.round.is_players_turn else "dealer", "shoots dealer")
-        return max(shoot_dealer_win_chance, shoot_player_win_chance)
+        if elements_about_equal(preference_after_shooting.values()):
+            print("\t" * depth, "so", player_name, "may shoot self or", opponent_name)
+            return chances_after_shooting[opponent_name]
+        if preference_after_shooting[player_name] > preference_after_shooting[opponent_name]:
+            print("\t" * depth, "so", player_name, "shoots self")
+            return chances_after_shooting[player_name]
+        print("\t" * depth, "so", player_name, "shoots", opponent_name)
+        return chances_after_shooting[opponent_name]
 
     def raw_shoot(self, target_name, is_live):
 
