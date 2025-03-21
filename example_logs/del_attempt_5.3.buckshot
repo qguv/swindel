@@ -5,7 +5,7 @@ dealer gets phone, cuffs
 dealer loads 2 live, 4 blank
 player shoots dealer, blank
 !check shells = 2 live, 3 blank
-!check odds
+!check best
 # dealer's next move would be to shoot the player for a (0.1 player, 0.6 tie, 0.3 dealer) result
 # if instead they shot themself, they'd get a (0.3, 0.6, 0.1) result
 
@@ -36,7 +36,7 @@ dealer shoots player, live
 !check player charges = 1
 
 !check shells = 1 live, 2 blank
-#!check odds
+#!check best
 
 # without DEL, the player would think that each of the three shells has a 33% chance of being live
 # shell possibilities: lbb lbb lbb

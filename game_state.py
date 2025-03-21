@@ -159,16 +159,16 @@ class PhaseState:
             self.round = None
             self.num_completed_rounds += 1
 
-    def win_probability(self, depth=1) -> Tuple[float, float, float]:
+    def best_move(self, depth=1) -> Tuple[str | None, Tuple[float, float, float]]:
         if self.players["dealer"].charges <= 0:
             print("\t" * depth, "player wins") # DEBUG
-            return (1.0, 0.0, 0.0)
+            return (None, (1.0, 0.0, 0.0))
         if self.players["player"].charges <= 0:
             print("\t" * depth, "dealer wins") # DEBUG
-            return (0.0, 0.0, 1.0)
+            return (None, (0.0, 0.0, 1.0))
         if self.round is None:
             print("\t" * depth, "it's a tie") # DEBUG
-            return (0.0, 1.0, 0.0)
+            return (None, (0.0, 1.0, 0.0))
 
         live_chance = self.round.chance_shell_is_live()
         blank_chance = 1.0 - live_chance
@@ -187,7 +187,7 @@ class PhaseState:
                     print("\t" * (depth+1), f"(the shell can't be {"live" if is_live else "blank"} because {e})")
                 else:
                     print("\t" * (depth+1), f"...and the shell were {"live" if is_live else "blank"}, then:")
-                    sub = result.win_probability(depth=depth+2)
+                    sub = result.best_move(depth=depth+2)[1]
                     print("\t" * (depth+2), sub)
                     chances_after_shooting[target_name].append(
                         tuple(chance * x for x in sub)
@@ -198,16 +198,19 @@ class PhaseState:
         preference_after_shooting = dmap(chances_after_shooting, player_preference if self.round.is_players_turn else dealer_preference)
 
         if elements_about_equal(list(preference_after_shooting.values())):
-            print("\t" * depth, "so", player_name, "may shoot self or", opponent_name, "expecting", chances_after_shooting[player_name], "or", chances_after_shooting[opponent_name])
-            return elementwise_sum((
-                scalar_mul(0.5, chances_after_shooting[player_name]),
-                scalar_mul(0.5, chances_after_shooting[opponent_name]),
-            ))
+            print("\t" * depth, "so", player_name, "shoots anyone, expecting", chances_after_shooting[opponent_name])
+            return (
+                "either",
+                elementwise_sum((
+                    scalar_mul(0.5, chances_after_shooting[player_name]),
+                    scalar_mul(0.5, chances_after_shooting[opponent_name]),
+                )),
+            )
         if preference_after_shooting[player_name] > preference_after_shooting[opponent_name]:
             print("\t" * depth, "so", player_name, "shoots self expecting", chances_after_shooting[player_name], "vs otherwise", chances_after_shooting[opponent_name])
-            return chances_after_shooting[player_name]
+            return (player_name, chances_after_shooting[player_name])
         print("\t" * depth, "so", player_name, "shoots", opponent_name, "expecting", chances_after_shooting[opponent_name], "vs otherwise", chances_after_shooting[player_name])
-        return chances_after_shooting[opponent_name]
+        return (opponent_name, chances_after_shooting[opponent_name])
 
     def raw_shoot(self, target_name, is_live):
 
