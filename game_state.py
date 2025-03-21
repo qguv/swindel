@@ -21,6 +21,7 @@ class RoundState:
     gun_is_sawed: bool = False
     handcuffed_player_names: Set[str] = field(default_factory=set)
     known_shells: Dict[int, ShellType] = field(default_factory=dict)
+    dealer_known_shells_theories: List[Dict[int, ShellType]] = field(default_factory=list)
 
     def current_player_name(self, _reverse=False) -> str:
         return "player" if (self.is_players_turn != _reverse) else "dealer"
@@ -49,7 +50,15 @@ class RoundState:
 
     def learn_future_shell(self, shells_from_now, is_live):
         self.assert_future_shell(shells_from_now, is_live)
-        self.known_shells[len(self.past_shells) + shells_from_now] = is_live
+        i = len(self.past_shells) + shells_from_now
+        self.known_shells[i] = is_live
+
+        # if the information we learn contradicts any dealer known_shells theories, we can eliminate those
+        num_theories_before = len(self.dealer_known_shells_theories)
+        self.dealer_known_shells_theories = [t for t in self.dealer_known_shells_theories if t.get(i, is_live) == is_live ]
+        num_theories_eliminated = len(self.dealer_known_shells_theories) - num_theories_before
+        if num_theories_eliminated:
+            print("eliminated", num_theories_eliminated, "theories about the dealer's knowledge!", len(self.dealer_known_shells_theories), "remaining") # DEBUG
 
     def assert_future_shell(self, shells_from_now, is_live):
 
