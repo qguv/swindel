@@ -193,19 +193,20 @@ class PhaseState:
                         tuple(chance * x for x in sub)
                     )
             chances_after_shooting[target_name] = tuple(map(sum, zip(*chances_after_shooting[target_name])))
+            print("\t" * (depth+1), chances_after_shooting[target_name])
 
         preference_after_shooting = dmap(chances_after_shooting, player_preference if self.round.is_players_turn else dealer_preference)
 
         if elements_about_equal(list(preference_after_shooting.values())):
-            print("\t" * depth, "so", player_name, "may shoot self or", opponent_name)
+            print("\t" * depth, "so", player_name, "may shoot self or", opponent_name, "expecting", chances_after_shooting[player_name], "or", chances_after_shooting[opponent_name])
             return elementwise_sum((
                 scalar_mul(0.5, chances_after_shooting[player_name]),
                 scalar_mul(0.5, chances_after_shooting[opponent_name]),
             ))
         if preference_after_shooting[player_name] > preference_after_shooting[opponent_name]:
-            print("\t" * depth, "so", player_name, "shoots self")
+            print("\t" * depth, "so", player_name, "shoots self expecting", chances_after_shooting[player_name], "vs otherwise", chances_after_shooting[opponent_name])
             return chances_after_shooting[player_name]
-        print("\t" * depth, "so", player_name, "shoots", opponent_name)
+        print("\t" * depth, "so", player_name, "shoots", opponent_name, "expecting", chances_after_shooting[opponent_name], "vs otherwise", chances_after_shooting[player_name])
         return chances_after_shooting[opponent_name]
 
     def raw_shoot(self, target_name, is_live):
