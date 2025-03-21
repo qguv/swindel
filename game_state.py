@@ -28,22 +28,22 @@ class RoundState:
     def current_opponent_name(self) -> str:
         return self.current_player_name(_reverse=True)
 
-    def remaining_shells(self, *, of_type=None) -> int:
+    def remaining_shells(self, *, of_type=ANY_SHELL) -> int:
         if of_type is None:
             return self.total_shells() - len(self.past_shells)
         return (
-            self.total_shells(of_type)
+            self.total_shells(of_type=of_type)
             - sum(1 for past_shell_type in self.past_shells if past_shell_type == of_type)
         )
 
-    def remaining_known_shells(self, of_type=None) -> int:
-        return sum(1 for i, known_shell_is_live in self.known_shells.items() if of_type is None or of_type == known_shell_is_live and i >= len(self.past_shells))
+    def remaining_known_shells(self, *, of_type=ANY_SHELL) -> int:
+        return sum(1 for i, known_shell_is_live in self.known_shells.items() if (of_type is ANY_SHELL or of_type == known_shell_is_live) and i >= len(self.past_shells))
 
-    def remaining_unknown_shells(self, of_type=None) -> int:
+    def remaining_unknown_shells(self, *, of_type=ANY_SHELL) -> int:
         return self.remaining_shells(of_type=of_type) - self.remaining_known_shells(of_type=of_type)
 
-    def total_shells(self, of_type=None) -> int:
-        if of_type is None:
+    def total_shells(self, *, of_type=ANY_SHELL) -> int:
+        if of_type is ANY_SHELL:
             return self.total_live_shells + self.total_blank_shells
         return self.total_live_shells if of_type else self.total_blank_shells
 
@@ -56,24 +56,26 @@ class RoundState:
         # are there enough shells?
         i = len(self.past_shells) + shells_from_now
         if i >= self.total_shells():
-            raise GameError("actually, there aren't enough shells to learn that!")
-
-        # does it contradict with something we learned
-        try:
-            known_shell_is_live = self.known_shells[i]
-        except KeyError:
-            pass
-        else:
-            if known_shell_is_live != is_live:
-                raise GameError(f"actually, player knows this shell to be {"live" if known_shell_is_live else "blank"}")
+            raise GameError("actually, there aren't enough shells for that!")
 
         # does it contradict with something we can deduce based on public knowledge of past shells?
         if self.remaining_shells(of_type=is_live) < 1:
             raise GameError(f"actually, there are no {"live" if is_live else "blank"} shells left")
 
-        # does it contradict with something we can deduce based on current knowledge of future shells?
-        if self.remaining_unknown_shells(of_type=is_live) < 1:
-            raise GameError(f"actually, all {"live" if is_live else "blank"} shells are accounted for")
+        # does it contradict with something we learned
+        try:
+            known_shell_is_live = self.known_shells[i]
+
+        # here, we don't know anything about this shell...
+        # but does the new information contradict with something we can deduce based on current knowledge of future shells?
+        except KeyError as e:
+            if self.remaining_unknown_shells(of_type=is_live) < 1:
+                raise GameError(f"actually, all {"live" if is_live else "blank"} shells are accounted for") from e
+
+        # here, we know what the shell is, just check that it's right
+        else:
+            if known_shell_is_live != is_live:
+                raise GameError(f"actually, player knows this shell to be {"live" if known_shell_is_live else "blank"}")
 
     def chance_shell_is_live(self):
 
@@ -103,24 +105,40 @@ class Player:
 
 def player_preference(chances: Tuple[float, float, float]):
     '''player prefers a player win, otherwise a draw'''
-    print(chances)
     return (chances[0], chances[1])
 
 def dealer_preference(chances: Tuple[float, float, float]):
     '''dealer prefers a dealer win, otherwise a draw'''
     return (chances[2], chances[1])
 
-def about_equal(*xs, e=0.0001):
-    return len(xs) < 2 or all(
-        abs(x - xs[0]) < e
-        for x in xs[1:]
-    )
+def about_equal(xs, e=0.0001):
+    xs = iter(xs)
+    x0 = next(xs)
+    for x in xs:
+        if abs(x - x0) > e:
+            return False
+    return True
 
-def elements_about_equal(*ts, **kwargs):
-    return len(ts) < 2 or all(
-        about_equal(nth_elements, **kwargs)
+def elements_about_equal(ts, **kwargs):
+    ts = iter(ts)
+    t0 = next(ts)
+    for t in ts:
+        for nth_elements in zip(t0, t):
+            if not about_equal(nth_elements, **kwargs):
+                return False
+    return True
+
+
+def elementwise_sum(ts):
+    return tuple(
+        sum(nth_elements)
         for nth_elements in zip(*ts)
     )
+
+
+def scalar_mul(a, xs):
+    return tuple(a * x for x in xs)
+
 
 def dmap(d, f):
     return { k: f(v) for k, v in d.items() }
@@ -170,7 +188,7 @@ class PhaseState:
                 else:
                     print("\t" * (depth+1), f"...and the shell were {"live" if is_live else "blank"}, then:")
                     sub = result.win_probability(depth=depth+2)
-                    print("\t" * (depth+1), sub)
+                    print("\t" * (depth+2), sub)
                     chances_after_shooting[target_name].append(
                         tuple(chance * x for x in sub)
                     )
@@ -178,9 +196,12 @@ class PhaseState:
 
         preference_after_shooting = dmap(chances_after_shooting, player_preference if self.round.is_players_turn else dealer_preference)
 
-        if elements_about_equal(preference_after_shooting.values()):
+        if elements_about_equal(list(preference_after_shooting.values())):
             print("\t" * depth, "so", player_name, "may shoot self or", opponent_name)
-            return chances_after_shooting[opponent_name]
+            return elementwise_sum((
+                scalar_mul(0.5, chances_after_shooting[player_name]),
+                scalar_mul(0.5, chances_after_shooting[opponent_name]),
+            ))
         if preference_after_shooting[player_name] > preference_after_shooting[opponent_name]:
             print("\t" * depth, "so", player_name, "shoots self")
             return chances_after_shooting[player_name]
