@@ -351,7 +351,7 @@ class PhaseState:
         '''
         result = deepcopy(self)
         try:
-            result.raw_shoot(target_name, is_live)
+            result.raw_shoot(target_name, is_live, eliminate_nonpredictive_theories=False)
         except GameError as e:
             print("\t" * depth, f"(the shell can't be {"live" if is_live else "blank"} because {e})")
         else:
@@ -389,14 +389,14 @@ class PhaseState:
         if not about_equal(0.0, live_chance):
             live_case = deepcopy(self)
             live_case.round.dealer_known_shells_theories = theories
-            live_case.raw_shoot(opponent_target, LIVE_SHELL)
+            live_case.raw_shoot(opponent_target, LIVE_SHELL, eliminate_nonpredictive_theories=False)
             _, live_outcome = self.best_move(depth)
 
         blank_outcome = (0.0, 0.0, 0.0)
         if not about_equal(0.0, blank_chance):
             blank_case = deepcopy(self)
             blank_case.round.dealer_known_shells_theories = theories
-            blank_case.raw_shoot(opponent_target, BLANK_SHELL)
+            blank_case.raw_shoot(opponent_target, BLANK_SHELL, eliminate_nonpredictive_theories=False)
             _, blank_outcome = self.best_move(depth)
 
         return elementwise_sum((
@@ -419,13 +419,13 @@ class PhaseState:
             theories_by_target[best_target].append(theory)
         return theories_by_target
 
-    def raw_shoot(self, target_name, is_live):
+    def raw_shoot(self, target_name, is_live, eliminate_nonpredictive_theories=True):
 
         # check if this is possible given what we know
         self.round.assert_future_shell(0, is_live)
 
         # eliminate theories which would not have predicted the dealer to have behaved like this
-        if not self.round.is_players_turn:
+        if eliminate_nonpredictive_theories and not self.round.is_players_turn:
             theories_by_target = self.theories_by_predicted_target()
             self.round.dealer_known_shells_theories = theories_by_target[target_name] + theories_by_target[None]
             if not self.round.dealer_known_shells_theories:
