@@ -21,6 +21,7 @@ class RoundState:
     gun_is_sawed: bool = False
     handcuffed_player_names: set[str] = field(default_factory=set)
     known_shells: dict[int, ShellType] = field(default_factory=dict)
+    dealer_known_shells: dict[int, ShellType] = field(default_factory=dict)
     dealer_known_shells_theories: list[dict[int, ShellType]] = field(default_factory=list)
 
     def current_player_name(self, _reverse=False) -> str:
@@ -52,13 +53,7 @@ class RoundState:
         self.assert_future_shell(shells_from_now, is_live)
         i = len(self.past_shells) + shells_from_now
         self.known_shells[i] = is_live
-
-        # if the information we learn contradicts any dealer known_shells theories, we can eliminate those
-        num_theories_before = len(self.dealer_known_shells_theories)
-        self.dealer_known_shells_theories = [t for t in self.dealer_known_shells_theories if t.get(i, is_live) == is_live ]
-        num_theories_eliminated = len(self.dealer_known_shells_theories) - num_theories_before
-        if num_theories_eliminated:
-            print("eliminated", num_theories_eliminated, "theories about the dealer's knowledge!", len(self.dealer_known_shells_theories), "remaining") # DEBUG
+        self.eliminate_dealer_known_shells_theories_contradictions(i, is_live)
 
     def assert_future_shell(self, shells_from_now, is_live):
 
@@ -111,7 +106,7 @@ class RoundState:
         self.past_shells.append(is_live)
 
 
-    def eliminate_dealer_known_shells_theories_contradictions(self, turn_i: int, shell_type: bool):
+    def eliminate_dealer_known_shells_theories_contradictions(self, turn_i: int, shell_type: ShellType):
         '''once we learn that a particular round is/was loaded for a turn, we can eliminate theories that contradict this'''
         # FIXME: also call this when we can deduce a future round with certainty by counting rounds
         num_theories_before = len(self.dealer_known_shells_theories)
@@ -160,10 +155,11 @@ class RoundState:
         for turn_i in range(self.total_shells()):
             for shell_type in (LIVE_SHELL, BLANK_SHELL):
                 if self.dealer_knows_that(turn_i, shell_type):
+                    self.dealer_known_shells[turn_i] = shell_type
                     self.known_shells[turn_i] = shell_type
 
 
-    def dealer_knows_that(self, turn_i: int, shell_type: bool) -> bool:
+    def dealer_knows_that(self, turn_i: int, shell_type: ShellType) -> bool:
         '''whether we have deduced that the dealer knows that the shell for turn_i is of type shell_type'''
         if not self.dealer_known_shells_theories:
             return False
@@ -217,6 +213,8 @@ class PhaseState:
             self.num_completed_rounds += 1
 
     def best_move(self, depth=1) -> tuple[str | None, tuple[float, float, float]]:
+        # FIXME: implement reason_as_dealer
+        # FIXME: update callsites to use reason_as_dealer when needed
         # FIXME: update to account for current theories of dealer's knowledge
         if self.players["dealer"].charges <= 0:
             print("\t" * depth, "player wins") # DEBUG
@@ -227,6 +225,34 @@ class PhaseState:
         if self.round is None:
             print("\t" * depth, "it's a tie") # DEBUG
             return (None, (0.0, 1.0, 0.0))
+
+        # game over? then that's the outcome
+        # otherwise, for each possible target:
+            # for each possible shell type:
+                # in a fork:
+                    # move
+                    # then determine the outcome:
+                        # game over? then that's the outcome
+                        # same player's turn? then recusively call, that's the outcome
+                        # other player's turn? then:
+                            # for each remaining theory of other player's knowledge (or if none, do the following once):
+                                # in a fork:
+                                    # clear all theories and dealer_known_shells
+                                    # set known_shells to the theory
+                                    # recursively call to get their best choice (ignore the odds they calculate)
+                            # group the theories based on the dealer's calculated optimal move
+                            # for each move group:
+                                # in a fork:
+                                    # set dealer theories to the ones in the group
+                                    # make the move on the dealer's behalf
+                                    # recursively call to get *our* outcome (ignore the best move we chose)
+                                # multiply the odds by the number of theories in the group
+                                # return these odds
+                            # sum the results, that's the outcome
+                    # multiply the outcome by the likelihood of this shell type
+            # sum the results, that's the outcome
+        # select the target with the best outcome
+        # return that target
 
         live_chance = self.round.chance_shell_is_live()
         blank_chance = 1.0 - live_chance
@@ -245,8 +271,10 @@ class PhaseState:
                     print("\t" * (depth+1), f"(the shell can't be {"live" if is_live else "blank"} because {e})")
                 else:
                     print("\t" * (depth+1), f"...and the shell were {"live" if is_live else "blank"}, then:")
+
                     sub = result.best_move(depth=depth+2)[1]
                     print("\t" * (depth+2), sub)
+
                     chances_after_shooting[target_name].append(
                         tuple(chance * x for x in sub)
                     )
