@@ -25,7 +25,7 @@ def about_equal(xs: Iterable[T], e=0.0001) -> bool:
     return True
 
 
-def elements_about_equal(ts: Iterable[Iterable[T]], **kwargs) -> bool:
+def all_about_equal_elementwise(ts: Iterable[Iterable[T]], **kwargs) -> bool:
     ts = iter(ts)
     t0 = next(ts)
     for t in ts:
@@ -44,15 +44,3 @@ def elementwise_sum(ts: Iterable[Iterable[T]]) -> Iterable[T]:
 
 def scalar_mul(a: T, xs: Iterable[T]) -> Iterable[T]:
     return tuple(a * x for x in xs)
-
-
-KeyT = TypeVar('KeyT')
-ValueT = TypeVar('ValueT')
-def dmax_item(d: dict[KeyT, ValueT]):
-    max_k = None
-    max_v = None
-    for k, v in d.items():
-        if max_v is None or v > max_v:
-            max_k = k
-            max_v = v
-    return max_k, max_v

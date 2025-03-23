@@ -5,7 +5,7 @@ import sys
 
 from exceptions import GameError
 from items import Items
-from util import about_equal, dmax_item, elements_about_equal, elementwise_sum, remove_unless, scalar_mul
+from util import about_equal, all_about_equal_elementwise, elementwise_sum, remove_unless, scalar_mul
 
 # true is live, false is blank
 type ShellType = bool
@@ -253,25 +253,32 @@ class PhaseState:
             return (None, (0.0, 1.0, 0.0))
 
         players = list(self.players.keys())
-        chances_per_target = {target: self._consider_shooting(target, depth=depth) for target in players}
-        if elements_about_equal(chances_per_target.values()):
-            return None, chances_per_target[players[0]]
-
         prefs = player_preference if self.round.is_players_turn else dealer_preference
-        prefs_per_target = {target: prefs(chances) for target, chances in chances_per_target.items()}
-        best_target, _ = dmax_item(prefs_per_target)
+        chances_per_target = {target: self._consider_shooting(target, depth=depth) for target in players}
+        best_target = (
+            None if all_about_equal_elementwise(chances_per_target.values())
+            else 'player' if prefs(chances_per_target['player']) > prefs(chances_per_target['dealer'])
+            else 'dealer'
+        )
+        best_chances = chances_per_target[best_target or 'dealer']
+
+        worst_target = "dealer" if best_target == "player" else "player"
+        otherwise_msg = [] if best_target is None else ["vs otherwise", chances_per_target[worst_target]]
+
         player_name = self.round.current_player_name()
-        best_chances = chances_per_target[best_target]
         print(
             "\t" * depth,
             "so",
             player_name,
             "shoots",
-            "self" if player_name == best_target else best_target,
+            (
+                "either" if best_target is None
+                else "self" if player_name == best_target
+                else best_target
+            ),
             "expecting",
             best_chances,
-            "vs otherwise",
-            chances_per_target["dealer" if best_target == "player" else "player"],
+            *otherwise_msg,
         )
         return best_target, chances_per_target[best_target]
 
