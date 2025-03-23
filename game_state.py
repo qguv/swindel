@@ -5,7 +5,7 @@ import sys
 
 from exceptions import GameError
 from items import Items
-from util import about_equal, dmap, dmax_item, elements_about_equal, elementwise_sum, remove_unless, scalar_mul
+from util import about_equal, dmax_item, elements_about_equal, elementwise_sum, remove_unless, scalar_mul
 
 # true is live, false is blank
 type ShellType = bool

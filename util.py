@@ -47,12 +47,6 @@ def scalar_mul(a: T, xs: Iterable[T]) -> Iterable[T]:
 
 
 KeyT = TypeVar('KeyT')
-OldValueT = TypeVar('OldValueT')
-NewValueT = TypeVar('NewValueT')
-def dmap(d: dict[KeyT, OldValueT], f: Callable[[OldValueT], NewValueT]) -> dict[KeyT, NewValueT]:
-    return { k: f(v) for k, v in d.items() }
-
-
 ValueT = TypeVar('ValueT')
 def dmax_item(d: dict[KeyT, ValueT]):
     max_k = None
