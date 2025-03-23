@@ -5,7 +5,7 @@ import sys
 
 from exceptions import GameError
 from items import Items
-from util import dmap, elements_about_equal, elementwise_sum, remove_unless, scalar_mul
+from util import about_equal, dmap, dmax_item, elements_about_equal, elementwise_sum, remove_unless, scalar_mul
 
 # true is live, false is blank
 type ShellType = bool
@@ -211,9 +211,37 @@ class PhaseState:
             self.num_completed_rounds += 1
 
     def best_move(self, depth=1) -> tuple[PlayerName | None, Chances]:
-        # FIXME: implement reason_as_dealer
-        # FIXME: update callsites to use reason_as_dealer when needed
-        # FIXME: update to account for current theories of dealer's knowledge
+        '''
+        game over? then that's the outcome
+        otherwise, for each possible target:
+            (
+            for each possible shell type:
+                in a fork:
+                    move
+                    then determine the outcome:
+                        game over? then that's the outcome
+                        same player's turn? then recusively call, that's the outcome
+                        other player's turn? then:
+                            for each remaining theory of other player's knowledge (or if none, do the following once):
+                                in a fork:
+                                    clear all theories and dealer_known_shells
+                                    set known_shells to the theory
+                                    recursively call to get their best choice (ignore the odds they calculate)
+                            group the theories based on the dealer's calculated optimal move
+                            for each move group:
+                                in a fork:
+                                    set dealer theories to the ones in the group
+                                    make the move on the dealer's behalf
+                                    recursively call to get *our* outcome (ignore the best move we chose)
+                                multiply the odds by the number of theories in the group
+                                return these odds
+                            sum the results, that's the outcome
+            multiply each outcome by the likelihood of this shell type
+            sum the results, that's the outcome
+            )
+        select the target with the best outcome
+        return that target
+        '''
         if self.players["dealer"].charges <= 0:
             print("\t" * depth, "player wins") # DEBUG
             return (None, (1.0, 0.0, 0.0))
@@ -224,87 +252,163 @@ class PhaseState:
             print("\t" * depth, "it's a tie") # DEBUG
             return (None, (0.0, 1.0, 0.0))
 
-        # game over? then that's the outcome
-        # otherwise, for each possible target:
-            # for each possible shell type:
-                # in a fork:
-                    # move
-                    # then determine the outcome:
-                        # game over? then that's the outcome
-                        # same player's turn? then recusively call, that's the outcome
-                        # other player's turn? then:
-                            # for each remaining theory of other player's knowledge (or if none, do the following once):
-                                # in a fork:
-                                    # clear all theories and dealer_known_shells
-                                    # set known_shells to the theory
-                                    # recursively call to get their best choice (ignore the odds they calculate)
-                            # group the theories based on the dealer's calculated optimal move
-                            # for each move group:
-                                # in a fork:
-                                    # set dealer theories to the ones in the group
-                                    # make the move on the dealer's behalf
-                                    # recursively call to get *our* outcome (ignore the best move we chose)
-                                # multiply the odds by the number of theories in the group
-                                # return these odds
-                            # sum the results, that's the outcome
-                    # multiply the outcome by the likelihood of this shell type
-            # sum the results, that's the outcome
-        # select the target with the best outcome
-        # return that target
+        players = list(self.players.keys())
+        chances_per_target = {target: self._consider_shooting(target, depth=depth) for target in players}
+        if elements_about_equal(chances_per_target.values()):
+            return None, chances_per_target[players[0]]
+
+        prefs = player_preference if self.round.is_players_turn else dealer_preference
+        prefs_per_target = {target: prefs(chances) for target, chances in chances_per_target.items()}
+        best_target, _ = dmax_item(prefs_per_target)
+        player_name = self.round.current_player_name()
+        best_chances = chances_per_target[best_target]
+        print(
+            "\t" * depth,
+            "so",
+            player_name,
+            "shoots",
+            "self" if player_name == best_target else best_target,
+            "expecting",
+            best_chances,
+            "vs otherwise",
+            chances_per_target["dealer" if best_target == "player" else "player"],
+        )
+        return best_target, chances_per_target[best_target]
+
+    def _consider_shooting(self, target_name: PlayerName, *, depth) -> Chances:
+        '''
+        for each possible shell type:
+            (
+            in a fork:
+                move
+                then determine the outcome:
+                    game over? then that's the outcome
+                    same player's turn? then recusively call, that's the outcome
+                    other player's turn? then:
+                        for each remaining theory of other player's knowledge (or if none, do the following once):
+                            in a fork:
+                                clear all theories and dealer_known_shells
+                                set known_shells to the theory
+                                recursively call to get their best choice (ignore the odds they calculate)
+                        group the theories based on the dealer's calculated optimal move
+                        for each move group:
+                            in a fork:
+                                set dealer theories to the ones in the group
+                                make the move on the dealer's behalf
+                                recursively call to get *our* outcome (ignore the best move we chose)
+                            multiply the odds by the number of theories in the group
+                            return these odds
+                        sum the results, that's the outcome
+            )
+        multiply each outcome by the likelihood of this shell type
+        sum the results, that's the outcome
+        '''
 
         live_chance = self.round.chance_shell_is_live()
         blank_chance = 1.0 - live_chance
 
         player_name = self.round.current_player_name()
-        opponent_name = self.round.current_opponent_name()
 
-        chances_after_shooting = defaultdict(list)
-        for target_name in ("dealer", "player"):
-            print("\t" * depth, f"if {player_name} shot {"self" if target_name == player_name else target_name}...")
-            for is_live, chance in ((True, live_chance), (False, blank_chance)):
-                result = deepcopy(self)
-                try:
-                    result.raw_shoot(target_name, is_live)
-                except GameError as e:
-                    print("\t" * (depth+1), f"(the shell can't be {"live" if is_live else "blank"} because {e})")
-                else:
-                    print("\t" * (depth+1), f"...and the shell were {"live" if is_live else "blank"}, then:")
+        print("\t" * depth, f"if {player_name} shot {"self" if target_name == player_name else target_name}...")
+        return elementwise_sum(
+            scalar_mul(chance, self._consider_shooting_with(target_name, shell_type, depth=depth+1))
+            for shell_type, chance in ((LIVE_SHELL, live_chance), (BLANK_SHELL, blank_chance))
+        )
 
-                    sub = result.best_move(depth=depth+2)[1]
-                    print("\t" * (depth+2), sub)
-
-                    chances_after_shooting[target_name].append(
-                        tuple(chance * x for x in sub)
+    def _consider_shooting_with(self, target_name: PlayerName, is_live: ShellType, *, depth) -> Chances:
+        '''
+        in a fork:
+            move
+            then determine the outcome:
+                game over? then that's the outcome
+                same player's turn? then recusively call, that's the outcome
+                other player's turn? then:
+                    (
+                    for each remaining theory of other player's knowledge (or if none, do the following once):
+                        in a fork:
+                            clear all theories and dealer_known_shells
+                            set known_shells to the theory
+                            recursively call to get their best choice (ignore the odds they calculate)
+                    group the theories based on the dealer's calculated optimal move
                     )
-            chances_after_shooting[target_name] = tuple(map(sum, zip(*chances_after_shooting[target_name])))
-            print("\t" * (depth+1), chances_after_shooting[target_name])
+                    for each move group:
+                        (
+                        in a fork:
+                            set dealer theories to the ones in the group
+                            make the move on the dealer's behalf
+                            recursively call to get *our* outcome (ignore the best move we chose)
+                        )
+                        multiply the odds by the number of theories in the group
+                        return these odds
+                    sum the results, that's the outcome
+        '''
+        result = deepcopy(self)
+        try:
+            result.raw_shoot(target_name, is_live)
+        except GameError as e:
+            print("\t" * depth, f"(the shell can't be {"live" if is_live else "blank"} because {e})")
+        else:
+            print("\t" * depth, f"...and the shell were {"live" if is_live else "blank"}, then:")
 
-        preference_after_shooting = dmap(chances_after_shooting, player_preference if self.round.is_players_turn else dealer_preference)
+        if (not result.round) or self.round.is_players_turn == result.round.is_players_turn:
+            # either the round is over and we can reuse the base case from the outermost function,
+            # or it's the same player's turn and we can just continue reasoning
+            _, chances = result.best_move(depth=depth+1)
+            print("\t" * depth, chances)
+            return chances
 
-        if elements_about_equal(list(preference_after_shooting.values())):
-            # FIXME: after calculating the dealer's reasoning, calculate weights based on own information (which might be more/different than the dealer's)
-            print("\t" * depth, "so", player_name, "shoots anyone, expecting", chances_after_shooting[opponent_name])
-            return (
-                "either",
-                elementwise_sum((
-                    scalar_mul(0.5, chances_after_shooting[player_name]),
-                    scalar_mul(0.5, chances_after_shooting[opponent_name]),
-                )),
+        # otherwise, it's the opponent's turn
+        theories_by_target = result.theories_by_predicted_target()
+        n_theories = sum(len(theories) for theories in theories_by_target.values())
+        return elementwise_sum(
+            scalar_mul(
+                len(theories) / n_theories,
+                result.consider_opponent_shooting(opponent_target, theories, depth=depth),
             )
-        if preference_after_shooting[player_name] > preference_after_shooting[opponent_name]:
-            print("\t" * depth, "so", player_name, "shoots self expecting", chances_after_shooting[player_name], "vs otherwise", chances_after_shooting[opponent_name])
-            return (player_name, chances_after_shooting[player_name])
-        print("\t" * depth, "so", player_name, "shoots", opponent_name, "expecting", chances_after_shooting[opponent_name], "vs otherwise", chances_after_shooting[player_name])
-        return (opponent_name, chances_after_shooting[opponent_name])
+            for opponent_target, theories in result.theories_by_predicted_target()
+        )
 
-    def theories_by_predicted_target(self) -> dict[PlayerName, list[KnownShells]]:
-        assert not self.round.is_players_turn
+    def consider_opponent_shooting(self, opponent_target, theories, *, depth):
+        '''
+        in a fork:
+            set dealer theories to the ones in the group
+            make the move on the dealer's behalf
+            recursively call to get *our* outcome (ignore the best move we chose)
+        '''
+        live_chance = self.round.chance_shell_is_live()
+        blank_chance = 1.0 - live_chance
+
+        live_outcome = (0.0, 0.0, 0.0)
+        if not about_equal(0.0, live_chance):
+            live_case = deepcopy(self)
+            live_case.round.dealer_known_shells_theories = theories
+            live_case.raw_shoot(opponent_target, LIVE_SHELL)
+            _, live_outcome = self.best_move(depth)
+
+        blank_outcome = (0.0, 0.0, 0.0)
+        if not about_equal(0.0, blank_chance):
+            blank_case = deepcopy(self)
+            blank_case.round.dealer_known_shells_theories = theories
+            blank_case.raw_shoot(opponent_target, BLANK_SHELL)
+            _, blank_outcome = self.best_move(depth)
+
+        return elementwise_sum((
+            scalar_mul(live_chance, live_outcome),
+            scalar_mul(blank_chance, blank_outcome),
+        ))
+
+    def theories_by_predicted_target(self) -> dict[PlayerName | None, list[KnownShells]]:
+        '''
+        note: the None key of the return value contains theories that assign
+        even chances to both targets. don't forget about these!
+        '''
         theories_by_target = defaultdict(list)
         for theory in self.round.dealer_known_shells_theories:
             fork = deepcopy(self)
             fork.round.dealer_known_shells_theories = [{}]
             fork.round.known_shells = theory
             best_target, _ = fork.best_move()
+            # warning: this can be None! so check the None key of the result!
             theories_by_target[best_target].append(theory)
         return theories_by_target
 
@@ -315,7 +419,8 @@ class PhaseState:
 
         # eliminate theories which would not have predicted the dealer to have behaved like this
         if not self.round.is_players_turn:
-            self.round.dealer_known_shells_theories = self.theories_by_predicted_target()[target_name]
+            theories_by_target = self.theories_by_predicted_target()
+            self.round.dealer_known_shells_theories = theories_by_target[target_name] + theories_by_target[None]
             if not self.round.dealer_known_shells_theories:
                 # return the null theory to maintain the invariant
                 self.round.dealer_known_shells_theories.append({})

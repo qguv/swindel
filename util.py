@@ -2,6 +2,7 @@ from collections.abc import Callable, Iterable
 from typing import TypeVar
 
 T = TypeVar('T')
+U = TypeVar('U')
 
 
 def remove_unless(xs: list[T], f: Callable[[T], bool]) -> int:
@@ -50,3 +51,14 @@ OldValueT = TypeVar('OldValueT')
 NewValueT = TypeVar('NewValueT')
 def dmap(d: dict[KeyT, OldValueT], f: Callable[[OldValueT], NewValueT]) -> dict[KeyT, NewValueT]:
     return { k: f(v) for k, v in d.items() }
+
+
+ValueT = TypeVar('ValueT')
+def dmax_item(d: dict[KeyT, ValueT]):
+    max_k = None
+    max_v = None
+    for k, v in d.items():
+        if max_v is None or v > max_v:
+            max_k = k
+            max_v = v
+    return max_k, max_v
