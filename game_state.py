@@ -1,10 +1,10 @@
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set, Tuple
 
 from exceptions import GameError
 from items import Items
+from util import dmap, elements_about_equal, elementwise_sum, remove_unless, scalar_mul
 
 # true is live, false is blank
 type ShellType = bool
@@ -16,12 +16,12 @@ ANY_SHELL = None
 class RoundState:
     total_live_shells: int
     total_blank_shells: int
-    past_shells: List[ShellType] = field(default_factory=list)
+    past_shells: list[ShellType] = field(default_factory=list)
     is_players_turn: bool = True
     gun_is_sawed: bool = False
-    handcuffed_player_names: Set[str] = field(default_factory=set)
-    known_shells: Dict[int, ShellType] = field(default_factory=dict)
-    dealer_known_shells_theories: List[Dict[int, ShellType]] = field(default_factory=list)
+    handcuffed_player_names: set[str] = field(default_factory=set)
+    known_shells: dict[int, ShellType] = field(default_factory=dict)
+    dealer_known_shells_theories: list[dict[int, ShellType]] = field(default_factory=list)
 
     def current_player_name(self, _reverse=False) -> str:
         return "player" if (self.is_players_turn != _reverse) else "dealer"
@@ -106,67 +106,106 @@ class RoundState:
         self.assert_future_shell(0, is_live)
 
         # if the information we see contradicts any dealer known_shells theories, we can eliminate those
-        i = len(self.past_shells)
-        num_theories_before = len(self.dealer_known_shells_theories)
-        self.dealer_known_shells_theories = [t for t in self.dealer_known_shells_theories if t.get(i, is_live) == is_live ]
-        num_theories_eliminated = len(self.dealer_known_shells_theories) - num_theories_before
-        if num_theories_eliminated:
-            print("eliminated", num_theories_eliminated, "theories about the dealer's knowledge!", len(self.dealer_known_shells_theories), "remaining") # DEBUG
-
+        turn_i = len(self.past_shells)
+        self.eliminate_dealer_known_shells_theories_contradictions(turn_i, is_live)
         self.past_shells.append(is_live)
+
+
+    def eliminate_dealer_known_shells_theories_contradictions(self, turn_i: int, shell_type: bool):
+        '''once we learn that a particular round is/was loaded for a turn, we can eliminate theories that contradict this'''
+        # FIXME: also call this when we can deduce a future round with certainty by counting rounds
+        num_theories_before = len(self.dealer_known_shells_theories)
+        num_theories_after = remove_unless(self.dealer_known_shells_theories, lambda t: t.get(turn_i, shell_type) == shell_type)
+        num_theories_eliminated = num_theories_after - num_theories_before
+        if num_theories_eliminated:
+            print("eliminated", num_theories_eliminated, "theories about the dealer's knowledge!", num_theories_after, "remaining") # DEBUG
+        # maybe glean information from this
+        self.maybe_leak_dealer_info()
+
+
+    def theorize_dealer_phone(self):
+        old_theories = self.dealer_known_shells_theories
+        self.dealer_known_shells_theories = []
+
+        # suppose the dealer learned about the shell loaded for the future turn with index: suppose_learn_turn_i
+        next_turn_i = len(self.known_shells) + 1
+        for suppose_learn_turn_i in range(next_turn_i, self.total_shells()):
+
+            new_theories = []
+            try:
+                known_shell = self.known_shells[suppose_learn_turn_i]
+            except KeyError:
+                # if we don't know which shell is loaded for the next turn, we have to consider both possibilities
+                new_theories.extend({suppose_learn_turn_i: suppose_shell_type} for suppose_shell_type in (LIVE_SHELL, BLANK_SHELL))
+            else:
+                # if we already know which shell is loaded for this future turn, then that's the only new theory
+                new_theories.append({suppose_learn_turn_i: known_shell})
+
+            if old_theories:
+                # one or more existing theories? then add updated versions of these
+                self.dealer_known_shells_theories.extend(old_theory | new_theory for new_theory in new_theories for old_theory in old_theories)
+            else:
+                # no existing theories? then add each new theory directly
+                self.dealer_known_shells_theories.extend(new_theories)
+
+        self.maybe_leak_dealer_info()
+
+
+    def maybe_leak_dealer_info(self):
+        '''if we've successfully deduced what the dealer learned, then add this to our knowledge too'''
+
+        if not self.dealer_known_shells_theories:
+            return
+
+        for turn_i in range(self.total_shells()):
+            for shell_type in (LIVE_SHELL, BLANK_SHELL):
+                if self.dealer_knows_that(turn_i, shell_type):
+                    self.known_shells[turn_i] = shell_type
+
+
+    def dealer_knows_that(self, turn_i: int, shell_type: bool) -> bool:
+        '''whether we have deduced that the dealer knows that the shell for turn_i is of type shell_type'''
+        if not self.dealer_known_shells_theories:
+            return False
+
+        for theory in self.dealer_known_shells_theories:
+
+            try:
+                known_shell_type = theory[turn_i]
+            except KeyError:
+                # there is at least one case where the dealer doesn't know what this shell is
+                return False
+
+            if known_shell_type != shell_type:
+                # there is at least one case where the dealer knows that this shell isn't this type
+                return False
+
+        return True
+
 
 @dataclass
 class Player:
     charges: int
-    items: List[Items] = field(default_factory=list)
+    items: list[Items] = field(default_factory=list)
     is_critical: bool = False
 
-def player_preference(chances: Tuple[float, float, float]):
+
+def player_preference(chances: tuple[float, float, float]) -> tuple[float, float]:
     '''player prefers a player win, otherwise a draw'''
     return (chances[0], chances[1])
 
-def dealer_preference(chances: Tuple[float, float, float]):
+
+def dealer_preference(chances: tuple[float, float, float]) -> tuple[float, float]:
     '''dealer prefers a dealer win, otherwise a draw'''
     return (chances[2], chances[1])
 
-def about_equal(xs, e=0.0001):
-    xs = iter(xs)
-    x0 = next(xs)
-    for x in xs:
-        if abs(x - x0) > e:
-            return False
-    return True
-
-def elements_about_equal(ts, **kwargs):
-    ts = iter(ts)
-    t0 = next(ts)
-    for t in ts:
-        for nth_elements in zip(t0, t):
-            if not about_equal(nth_elements, **kwargs):
-                return False
-    return True
-
-
-def elementwise_sum(ts):
-    return tuple(
-        sum(nth_elements)
-        for nth_elements in zip(*ts)
-    )
-
-
-def scalar_mul(a, xs):
-    return tuple(a * x for x in xs)
-
-
-def dmap(d, f):
-    return { k: f(v) for k, v in d.items() }
 
 @dataclass
 class PhaseState:
     players: OrderedDict[str, Player]
     max_charges: int
     critical_charges: int = 0
-    round: Optional[RoundState] = None
+    round: RoundState | None = None
     num_completed_rounds: int = 0
 
     def eject_shell(self, is_live):
@@ -177,7 +216,7 @@ class PhaseState:
             self.round = None
             self.num_completed_rounds += 1
 
-    def best_move(self, depth=1) -> Tuple[str | None, Tuple[float, float, float]]:
+    def best_move(self, depth=1) -> tuple[str | None, tuple[float, float, float]]:
         # FIXME: update to account for current theories of dealer's knowledge
         if self.players["dealer"].charges <= 0:
             print("\t" * depth, "player wins") # DEBUG
@@ -217,6 +256,7 @@ class PhaseState:
         preference_after_shooting = dmap(chances_after_shooting, player_preference if self.round.is_players_turn else dealer_preference)
 
         if elements_about_equal(list(preference_after_shooting.values())):
+            # FIXME: after calculating the dealer's reasoning, calculate weights based on own information (which might be more/different than the dealer's)
             print("\t" * depth, "so", player_name, "shoots anyone, expecting", chances_after_shooting[opponent_name])
             return (
                 "either",
@@ -232,8 +272,7 @@ class PhaseState:
         return (opponent_name, chances_after_shooting[opponent_name])
 
     def raw_shoot(self, target_name, is_live):
-
-        # FIXME compare against theories
+        # TODO compare dealer's behavior against our current theories
 
         # check if this is possible given what we know
         self.round.assert_future_shell(0, is_live)
@@ -266,15 +305,16 @@ class PhaseState:
             except KeyError:
                 self.round.is_players_turn = not self.round.is_players_turn
 
+
 @dataclass
 class GameState:
-    player_names: List[str]
+    player_names: list[str]
     is_double_or_nothing_mode: bool = False
     total_phases: int = 3
-    phase: Optional[PhaseState] = None
+    phase: PhaseState | None = None
     num_completed_phases: int = 0
-    winner_names_by_phase: List[str] = field(default_factory=list) # just for sanity checking logs
-    winner: Optional[str] = None
+    winner_names_by_phase: list[str] = field(default_factory=list) # just for sanity checking logs
+    winner: str | None = None
     max_items: int = 8
 
     def shoot(self, target_name, is_live):

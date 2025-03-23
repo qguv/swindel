@@ -339,10 +339,7 @@ def parse_game_line(old_state: GameState, words) -> GameState:
                 case [player_name, "uses", "phone"]:
                     if player_name == "player":
                         raise LogParseError("missing information: what did the player see?")
-                    if new_state.phase.round.remaining_shells() == 1:
-                        pass # dealer learned nothing
-                    else:
-                        pass # FIXME: add dealer known_shells theories
+                    new_state.phase.round.theorize_dealer_phone()
 
                 case [player_name, "uses", "phone", ",", "hears", _shell_cardinal, _shell_type]:
                     is_live = _shell_type == "live"
