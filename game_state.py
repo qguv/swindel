@@ -1,6 +1,7 @@
 from collections import OrderedDict, defaultdict
 from copy import deepcopy
 from dataclasses import dataclass, field
+import sys
 
 from exceptions import GameError
 from items import Items
@@ -12,6 +13,13 @@ LIVE_SHELL = True
 BLANK_SHELL = False
 ANY_SHELL = None
 
+type KnownShells = dict[int, ShellType]
+type PlayerName = str
+type PlayerWinChance = float
+type TieChance = float
+type DealerWinChance = float
+type Chances = tuple[float, float, float]
+
 @dataclass
 class RoundState:
     total_live_shells: int
@@ -20,9 +28,8 @@ class RoundState:
     is_players_turn: bool = True
     gun_is_sawed: bool = False
     handcuffed_player_names: set[str] = field(default_factory=set)
-    known_shells: dict[int, ShellType] = field(default_factory=dict)
-    dealer_known_shells: dict[int, ShellType] = field(default_factory=dict)
-    dealer_known_shells_theories: list[dict[int, ShellType]] = field(default_factory=list)
+    known_shells: KnownShells = field(default_factory=dict)
+    dealer_known_shells_theories: list[KnownShells] = field(default_factory=lambda: [{}])
 
     def current_player_name(self, _reverse=False) -> str:
         return "player" if (self.is_players_turn != _reverse) else "dealer"
@@ -136,12 +143,8 @@ class RoundState:
                 # if we already know which shell is loaded for this future turn, then that's the only new theory
                 new_theories.append({suppose_learn_turn_i: known_shell})
 
-            if old_theories:
-                # one or more existing theories? then add updated versions of these
-                self.dealer_known_shells_theories.extend(old_theory | new_theory for new_theory in new_theories for old_theory in old_theories)
-            else:
-                # no existing theories? then add each new theory directly
-                self.dealer_known_shells_theories.extend(new_theories)
+            # add updated versions of the old theories
+            self.dealer_known_shells_theories.extend(old_theory | new_theory for new_theory in new_theories for old_theory in old_theories)
 
         self.maybe_leak_dealer_info()
 
@@ -149,21 +152,16 @@ class RoundState:
     def maybe_leak_dealer_info(self):
         '''if we've successfully deduced what the dealer learned, then add this to our knowledge too'''
 
-        if not self.dealer_known_shells_theories:
-            return
-
         for turn_i in range(self.total_shells()):
             for shell_type in (LIVE_SHELL, BLANK_SHELL):
                 if self.dealer_knows_that(turn_i, shell_type):
-                    self.dealer_known_shells[turn_i] = shell_type
+                    print(f"HEY! we deduced that the dealer learned that the {turn_i}th shell is {'live' if shell_type else 'blank'}!")
                     self.known_shells[turn_i] = shell_type
+                    sys.exit() # DEBUG
 
 
     def dealer_knows_that(self, turn_i: int, shell_type: ShellType) -> bool:
         '''whether we have deduced that the dealer knows that the shell for turn_i is of type shell_type'''
-        if not self.dealer_known_shells_theories:
-            return False
-
         for theory in self.dealer_known_shells_theories:
 
             try:
@@ -186,12 +184,12 @@ class Player:
     is_critical: bool = False
 
 
-def player_preference(chances: tuple[float, float, float]) -> tuple[float, float]:
+def player_preference(chances: Chances) -> tuple[float, float]:
     '''player prefers a player win, otherwise a draw'''
     return (chances[0], chances[1])
 
 
-def dealer_preference(chances: tuple[float, float, float]) -> tuple[float, float]:
+def dealer_preference(chances: Chances) -> tuple[float, float]:
     '''dealer prefers a dealer win, otherwise a draw'''
     return (chances[2], chances[1])
 
@@ -212,7 +210,7 @@ class PhaseState:
             self.round = None
             self.num_completed_rounds += 1
 
-    def best_move(self, depth=1) -> tuple[str | None, tuple[float, float, float]]:
+    def best_move(self, depth=1) -> tuple[PlayerName | None, Chances]:
         # FIXME: implement reason_as_dealer
         # FIXME: update callsites to use reason_as_dealer when needed
         # FIXME: update to account for current theories of dealer's knowledge
@@ -299,11 +297,30 @@ class PhaseState:
         print("\t" * depth, "so", player_name, "shoots", opponent_name, "expecting", chances_after_shooting[opponent_name], "vs otherwise", chances_after_shooting[player_name])
         return (opponent_name, chances_after_shooting[opponent_name])
 
+    def theories_by_predicted_target(self) -> dict[PlayerName, list[KnownShells]]:
+        assert not self.round.is_players_turn
+        theories_by_target = defaultdict(list)
+        for theory in self.round.dealer_known_shells_theories:
+            fork = deepcopy(self)
+            fork.round.dealer_known_shells_theories = [{}]
+            fork.round.known_shells = theory
+            best_target, _ = fork.best_move()
+            theories_by_target[best_target].append(theory)
+        return theories_by_target
+
     def raw_shoot(self, target_name, is_live):
-        # TODO compare dealer's behavior against our current theories
 
         # check if this is possible given what we know
         self.round.assert_future_shell(0, is_live)
+
+        # eliminate theories which would not have predicted the dealer to have behaved like this
+        if not self.round.is_players_turn:
+            self.round.dealer_known_shells_theories = self.theories_by_predicted_target()[target_name]
+            if not self.round.dealer_known_shells_theories:
+                # return the null theory to maintain the invariant
+                self.round.dealer_known_shells_theories.append({})
+                print("WARNING: the dealer is not playing optimally, so all bets are off")
+                sys.exit() # DEBUG
 
         if is_live:
 
