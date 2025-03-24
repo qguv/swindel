@@ -366,13 +366,14 @@ class PhaseState:
 
         # otherwise, it's the opponent's turn
         theories_by_target = result.theories_by_predicted_target()
-        n_theories = sum(len(theories) for theories in theories_by_target.values())
+        target_weights = calculate_target_weights(theories_by_target)
         return elementwise_sum(
             scalar_mul(
-                len(theories) / n_theories,
+                target_weights[opponent_target],
                 result.consider_opponent_shooting(opponent_target, theories, depth=depth),
             )
-            for opponent_target, theories in result.theories_by_predicted_target()
+            for opponent_target, theories in theories_by_target.items()
+            if opponent_target is not None # skip these, we've accounted for them in theory_weights
         )
 
     def consider_opponent_shooting(self, opponent_target, theories, *, depth):
@@ -494,3 +495,12 @@ class GameState:
             ):
                 self.winner = non_target_name
             return
+
+def calculate_target_weights(theories_by_target: dict[PlayerName | None, list[KnownShells]]) -> dict[PlayerName, float]:
+    n_theories = sum(len(theories) for theories in theories_by_target.values())
+    half_of_indifferent_theories = len(theories_by_target[None]) / 2.0
+    return {
+        target_name: (len(theories) + half_of_indifferent_theories) / n_theories
+        for target_name, theories in theories_by_target.items()
+        if target_name is not None
+    }
