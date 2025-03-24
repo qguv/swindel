@@ -5,7 +5,7 @@ import sys
 
 from exceptions import GameError
 from items import Items
-from util import about_equal, all_about_equal_elementwise, elementwise_sum, remove_unless, scalar_mul
+from util import all_about_equal_floats, all_about_equal_elementwise, elementwise_sum, remove_unless, scalar_mul
 
 # true is live, false is blank
 type ShellType = bool
@@ -320,7 +320,7 @@ class PhaseState:
         return elementwise_sum(
             scalar_mul(chance, self._consider_shooting_with(target_name, shell_type, depth=depth+1, chance=chance))
             for shell_type, chance in ((LIVE_SHELL, live_chance), (BLANK_SHELL, blank_chance))
-            if not about_equal((chance, 0.0))
+            if not all_about_equal_floats((chance, 0.0))
         )
 
     def _consider_shooting_with(self, target_name: PlayerName, is_live: ShellType, *, depth, chance) -> Chances:
@@ -388,14 +388,14 @@ class PhaseState:
         blank_chance = 1.0 - live_chance
 
         live_outcome = (0.0, 0.0, 0.0)
-        if not about_equal(0.0, live_chance):
+        if not all_about_equal_floats((0.0, live_chance)):
             live_case = deepcopy(self)
             live_case.round.dealer_known_shells_theories = theories
             live_case.raw_shoot(opponent_target, LIVE_SHELL, eliminate_nonpredictive_theories=False)
             _, live_outcome = self.best_move(depth+1)
 
         blank_outcome = (0.0, 0.0, 0.0)
-        if not about_equal(0.0, blank_chance):
+        if not all_about_equal_floats((0.0, blank_chance)):
             blank_case = deepcopy(self)
             blank_case.round.dealer_known_shells_theories = theories
             blank_case.raw_shoot(opponent_target, BLANK_SHELL, eliminate_nonpredictive_theories=False)

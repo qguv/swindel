@@ -16,7 +16,7 @@ def remove_unless(xs: list[T], f: Callable[[T], bool]) -> int:
     return w
 
 
-def about_equal(xs: Iterable[T], /, e=0.0001) -> bool:
+def all_about_equal_floats(xs: Iterable[float], /, e=0.0001) -> bool:
     xs = iter(xs)
     x0 = next(xs)
     for x in xs:
@@ -30,7 +30,7 @@ def all_about_equal_elementwise(ts: Iterable[Iterable[T]], **kwargs) -> bool:
     t0 = next(ts)
     for t in ts:
         for nth_elements in zip(t0, t):
-            if not about_equal(nth_elements, **kwargs):
+            if not all_about_equal_floats(nth_elements, **kwargs):
                 return False
     return True
 
