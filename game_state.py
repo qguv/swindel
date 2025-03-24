@@ -243,17 +243,19 @@ class PhaseState:
         return that target
         '''
         if self.players["dealer"].charges <= 0:
-            dprint(depth, "player wins") # DEBUG
+            print("player wins") # DEBUG
             return (None, (1.0, 0.0, 0.0))
         if self.players["player"].charges <= 0:
-            dprint(depth, "dealer wins") # DEBUG
+            print("dealer wins") # DEBUG
             return (None, (0.0, 0.0, 1.0))
         if self.round is None:
-            dprint(depth, "it's a tie") # DEBUG
+            print("it's a tie") # DEBUG
             return (None, (0.0, 1.0, 0.0))
 
         players = list(self.players.keys())
         prefs = player_preference if self.round.is_players_turn else dealer_preference
+        print()
+        dprint(depth-1)
         chances_per_target = {target: self._consider_shooting(target, depth=depth) for target in players}
         best_target = (
             None if all_about_equal_elementwise(chances_per_target.values())
@@ -268,7 +270,7 @@ class PhaseState:
         player_name = self.round.current_player_name()
         dprint(
             depth,
-            "so",
+            "\b\bso",
             player_name,
             "shoots",
             (
@@ -280,6 +282,7 @@ class PhaseState:
             best_chances,
             *otherwise_msg,
         )
+        dprint(depth-1)
         return best_target, best_chances
 
     def _consider_shooting(self, target_name: PlayerName, *, depth) -> Chances:
@@ -316,7 +319,7 @@ class PhaseState:
 
         player_name = self.round.current_player_name()
 
-        dprint(depth, f"if {player_name} shot {"self" if target_name == player_name else target_name}...")
+        dprint(depth, f"\b- if {player_name} shot {"self" if target_name == player_name else target_name}", end='')
         return elementwise_sum(
             scalar_mul(chance, self._consider_shooting_with(target_name, shell_type, depth=depth+1, chance=chance))
             for shell_type, chance in ((LIVE_SHELL, live_chance), (BLANK_SHELL, blank_chance))
@@ -351,21 +354,28 @@ class PhaseState:
                     sum the results, that's the outcome
         '''
         result = deepcopy(self)
+        new_depth = depth + 1
         try:
             result.raw_shoot(target_name, is_live, eliminate_nonpredictive_theories=False)
         except GameError as e:
+            print('...')
             dprint(depth, f"(the shell can't be {"live" if is_live else "blank"} because {e})")
         else:
-            dprint(depth, f"...and the shell were {"live" if is_live else "blank"} ({chance:.1%} chance), then:")
+            if all_about_equal_floats((1.0, chance)):
+                print(f", the shell is {"live" if is_live else "blank"}, then", end=' ')
+                new_depth -= 1
+            else:
+                print("...")
+                dprint(depth, f"...and the shell were {"live" if is_live else "blank"} ({chance:.1%} chance), then", end=' ')
 
         if (not result.round) or self.round.is_players_turn == result.round.is_players_turn:
             # either the round is over and we can reuse the base case from the outermost function,
             # or it's the same player's turn and we can just continue reasoning
-            _, chances = result.best_move(depth=depth+1)
+            _, chances = result.best_move(depth=new_depth)
             return chances
 
         # otherwise, it's the opponent's turn
-        theories_by_target = result.theories_by_predicted_target(depth=depth+1)
+        theories_by_target = result.theories_by_predicted_target(depth=new_depth)
         target_weights = _calculate_target_weights(theories_by_target, result.players.keys())
 
         chances = elementwise_sum(
@@ -511,4 +521,4 @@ def _calculate_target_weights(theories_by_target: dict[PlayerName | None, list[K
 
 def dprint(depth: int, *args, **kwargs) -> None:
     if depth >= 0:
-        print("\t" * depth, *args, **kwargs)
+        print("\t|" * depth, *args, **kwargs)
