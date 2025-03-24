@@ -366,20 +366,21 @@ class PhaseState:
 
         # otherwise, it's the opponent's turn
         theories_by_target = result.theories_by_predicted_target(depth=depth+1)
-        target_weights = calculate_target_weights(theories_by_target)
+        target_weights = _calculate_target_weights(theories_by_target, result.players.keys())
+
         chances = elementwise_sum(
             scalar_mul(
-                target_weights[opponent_target],
-                result.consider_opponent_shooting(opponent_target, theories, depth=depth),
+                chance,
+                result.consider_opponent_shooting(target_name, theories_by_target[target_name] + theories_by_target[None], depth=depth),
             )
-            for opponent_target, theories in theories_by_target.items()
-            if opponent_target is not None # skip these, we've accounted for them in theory_weights
+            for target_name, chance in target_weights.items()
+            if not all_about_equal_floats((chance, 0.0))
         )
         dprint(depth, f"...but the *{result.round.current_player_name()}* figures the chances are", chances)
         return chances
 
 
-    def consider_opponent_shooting(self, opponent_target, theories, *, depth):
+    def consider_opponent_shooting(self, opponent_target: PlayerName, theories: list[KnownShells], *, depth: int) -> Chances:
         '''
         in a fork:
             set dealer theories to the ones in the group
@@ -419,12 +420,6 @@ class PhaseState:
             fork.round.dealer_known_shells_theories = [{}]
             fork.round.known_shells = theory
             best_target, _ = fork.best_move(depth=depth)
-
-            # force each specific target to run whenever indifference is involved
-            if best_target is None:
-                for player_name in self.players.keys():
-                    theories_by_target[player_name] = theories_by_target[player_name]
-
             # warning: this can be None! so check the None key of the result!
             theories_by_target[best_target].append(theory)
         return theories_by_target
@@ -505,13 +500,12 @@ class GameState:
                 self.winner = non_target_name
             return
 
-def calculate_target_weights(theories_by_target: dict[PlayerName | None, list[KnownShells]]) -> dict[PlayerName, float]:
+def _calculate_target_weights(theories_by_target: dict[PlayerName | None, list[KnownShells]], player_names) -> dict[PlayerName, float]:
     n_theories = sum(len(theories) for theories in theories_by_target.values())
     half_of_indifferent_theories = len(theories_by_target[None]) / 2.0
     return {
-        target_name: (len(theories) + half_of_indifferent_theories) / n_theories
-        for target_name, theories in theories_by_target.items()
-        if target_name is not None
+        player_name: (len(theories_by_target[player_name]) + half_of_indifferent_theories) / n_theories
+        for player_name in player_names
     }
 
 
