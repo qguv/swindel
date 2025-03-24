@@ -243,13 +243,13 @@ class PhaseState:
         return that target
         '''
         if self.players["dealer"].charges <= 0:
-            print("\t" * depth, "player wins") # DEBUG
+            dprint(depth, "player wins") # DEBUG
             return (None, (1.0, 0.0, 0.0))
         if self.players["player"].charges <= 0:
-            print("\t" * depth, "dealer wins") # DEBUG
+            dprint(depth, "dealer wins") # DEBUG
             return (None, (0.0, 0.0, 1.0))
         if self.round is None:
-            print("\t" * depth, "it's a tie") # DEBUG
+            dprint(depth, "it's a tie") # DEBUG
             return (None, (0.0, 1.0, 0.0))
 
         players = list(self.players.keys())
@@ -266,8 +266,8 @@ class PhaseState:
         otherwise_msg = [] if best_target is None else ["vs otherwise", chances_per_target[worst_target]]
 
         player_name = self.round.current_player_name()
-        print(
-            "\t" * depth,
+        dprint(
+            depth,
             "so",
             player_name,
             "shoots",
@@ -316,13 +316,14 @@ class PhaseState:
 
         player_name = self.round.current_player_name()
 
-        print("\t" * depth, f"if {player_name} shot {"self" if target_name == player_name else target_name}...")
+        dprint(depth, f"if {player_name} shot {"self" if target_name == player_name else target_name}...")
         return elementwise_sum(
-            scalar_mul(chance, self._consider_shooting_with(target_name, shell_type, depth=depth+1))
+            scalar_mul(chance, self._consider_shooting_with(target_name, shell_type, depth=depth+1, chance=chance))
             for shell_type, chance in ((LIVE_SHELL, live_chance), (BLANK_SHELL, blank_chance))
+            if not about_equal((chance, 0.0))
         )
 
-    def _consider_shooting_with(self, target_name: PlayerName, is_live: ShellType, *, depth) -> Chances:
+    def _consider_shooting_with(self, target_name: PlayerName, is_live: ShellType, *, depth, chance) -> Chances:
         '''
         in a fork:
             move
@@ -353,19 +354,19 @@ class PhaseState:
         try:
             result.raw_shoot(target_name, is_live, eliminate_nonpredictive_theories=False)
         except GameError as e:
-            print("\t" * depth, f"(the shell can't be {"live" if is_live else "blank"} because {e})")
+            dprint(depth, f"(the shell can't be {"live" if is_live else "blank"} because {e})")
         else:
-            print("\t" * depth, f"...and the shell were {"live" if is_live else "blank"}, then:")
+            dprint(depth, f"...and the shell were {"live" if is_live else "blank"} ({chance:.1%} chance), then:")
 
         if (not result.round) or self.round.is_players_turn == result.round.is_players_turn:
             # either the round is over and we can reuse the base case from the outermost function,
             # or it's the same player's turn and we can just continue reasoning
             _, chances = result.best_move(depth=depth+1)
-            print("\t" * depth, chances)
+            dprint(depth, chances)
             return chances
 
         # otherwise, it's the opponent's turn
-        theories_by_target = result.theories_by_predicted_target()
+        theories_by_target = result.theories_by_predicted_target(depth=depth+1)
         target_weights = calculate_target_weights(theories_by_target)
         return elementwise_sum(
             scalar_mul(
@@ -391,21 +392,21 @@ class PhaseState:
             live_case = deepcopy(self)
             live_case.round.dealer_known_shells_theories = theories
             live_case.raw_shoot(opponent_target, LIVE_SHELL, eliminate_nonpredictive_theories=False)
-            _, live_outcome = self.best_move(depth)
+            _, live_outcome = self.best_move(depth+1)
 
         blank_outcome = (0.0, 0.0, 0.0)
         if not about_equal(0.0, blank_chance):
             blank_case = deepcopy(self)
             blank_case.round.dealer_known_shells_theories = theories
             blank_case.raw_shoot(opponent_target, BLANK_SHELL, eliminate_nonpredictive_theories=False)
-            _, blank_outcome = self.best_move(depth)
+            _, blank_outcome = self.best_move(depth+1)
 
         return elementwise_sum((
             scalar_mul(live_chance, live_outcome),
             scalar_mul(blank_chance, blank_outcome),
         ))
 
-    def theories_by_predicted_target(self) -> dict[PlayerName | None, list[KnownShells]]:
+    def theories_by_predicted_target(self, depth=-999999999) -> dict[PlayerName | None, list[KnownShells]]:
         '''
         note: the None key of the return value contains theories that assign
         even chances to both targets. don't forget about these!
@@ -415,7 +416,7 @@ class PhaseState:
             fork = deepcopy(self)
             fork.round.dealer_known_shells_theories = [{}]
             fork.round.known_shells = theory
-            best_target, _ = fork.best_move()
+            best_target, _ = fork.best_move(depth=depth)
             # warning: this can be None! so check the None key of the result!
             theories_by_target[best_target].append(theory)
         return theories_by_target
@@ -504,3 +505,8 @@ def calculate_target_weights(theories_by_target: dict[PlayerName | None, list[Kn
         for target_name, theories in theories_by_target.items()
         if target_name is not None
     }
+
+
+def dprint(depth: int, *args, **kwargs) -> None:
+    if depth >= 0:
+        print("\t" * depth, *args, **kwargs)

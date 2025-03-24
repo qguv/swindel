@@ -16,7 +16,7 @@ def remove_unless(xs: list[T], f: Callable[[T], bool]) -> int:
     return w
 
 
-def about_equal(xs: Iterable[T], e=0.0001) -> bool:
+def about_equal(xs: Iterable[T], /, e=0.0001) -> bool:
     xs = iter(xs)
     x0 = next(xs)
     for x in xs:
