@@ -386,7 +386,7 @@ class PhaseState:
             for target_name, chance in target_weights.items()
             if not all_about_equal_floats((chance, 0.0))
         )
-        dprint(depth, f"...but the *{result.round.current_player_name()}* figures the chances are", chances)
+        dprint(depth, f"...but the *{self.round.current_player_name()}* figures the chances are", chances)
         return chances
 
 
@@ -432,6 +432,9 @@ class PhaseState:
             best_target, _ = fork.best_move(depth=depth)
             # warning: this can be None! so check the None key of the result!
             theories_by_target[best_target].append(theory)
+        dprint(depth, "dealer might:")
+        # FIXME: text output indenting and spacing is wrong
+        dprint(depth+1)
         return theories_by_target
 
     def raw_shoot(self, target_name, is_live, eliminate_nonpredictive_theories=True):
