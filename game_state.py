@@ -280,7 +280,7 @@ class PhaseState:
             best_chances,
             *otherwise_msg,
         )
-        return best_target, chances_per_target[best_target]
+        return best_target, best_chances
 
     def _consider_shooting(self, target_name: PlayerName, *, depth) -> Chances:
         '''
