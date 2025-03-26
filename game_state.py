@@ -158,7 +158,6 @@ class RoundState:
                 if self.dealer_knows_that(turn_i, shell_type):
                     print(f"HEY! we deduced that the dealer learned that the {turn_i}th shell is {'live' if shell_type else 'blank'}!")
                     self.known_shells[turn_i] = shell_type
-                    sys.exit() # DEBUG
 
 
     def dealer_knows_that(self, turn_i: int, shell_type: ShellType) -> bool:

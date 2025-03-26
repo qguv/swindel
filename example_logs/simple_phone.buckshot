@@ -2,13 +2,32 @@ phase I, 2 charges
 
 round I.1
 dealer gets phone
-dealer loads 1 live, 2 blank
-player shoots dealer, blank
+dealer loads 2 live, 1 blank
+player shoots dealer, live
 
 !check shells = 1 live, 1 blank
 
 dealer uses phone
+!check theories
+!check known shells
+!check theories = 2
 # he could have seen:
 #   - next one blank (so knows that this one is live)
 #   - next one live (so knows that this one is blank)
+
 dealer shoots player, live
+!check theories = 1
+# - suppose he had learned before that the next turn's shell was blank, then
+#   he would be able to reason that this shell is live, and would decide to
+#   shoot us. as this is consistent with what he did, so we can't eliminate
+#   theory.
+# - suppose he had learned before that the next turn's shell was live, then
+#   he would be able to reason that this shell is blank, and would shoot himself
+#   to get another turn. this contradicts what he did, so we must eliminate this
+#   theory.
+
+# because, in all the remaining theories, the dealer knows that the next shell is blank, then:
+# - we know that he knows that the next shell is blank
+# - we know the next shell is blank
+!check theories
+!check known shells

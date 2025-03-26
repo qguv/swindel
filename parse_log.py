@@ -6,7 +6,7 @@ from copy import deepcopy
 import sys
 
 from exceptions import GameError, TurnError
-from game_state import GameState, PhaseState, Player, RoundState, LIVE_SHELL, BLANK_SHELL
+from game_state import GameState, KnownShells, PhaseState, Player, RoundState, LIVE_SHELL, BLANK_SHELL
 from items import Items
 
 cardinal_to_ordinal = {
@@ -236,6 +236,32 @@ def check_query_line(state: GameState, words) -> None:
             outcomes_msg = ", ".join(f"{winner} {chance*100:.2f}%" for winner, chance in zip(("player", "draw", "dealer"), outcomes))
             print(f"\nbest: {state.phase.round.current_player_name()} should shoot {target_name or 'either'} ({outcomes_msg})")
 
+        case ["!check", "theories"]:
+            if state.phase is None:
+                raise CheckFailed("no phase in progress")
+            if state.phase.round is None:
+                raise CheckFailed("no round in progress")
+            print("theories:")
+            theories = state.phase.round.dealer_known_shells_theories
+            for i, theory in enumerate(theories):
+                print(f"\t- theory {i}: dealer knows", format_theory(theory))
+
+        case ["!check", "known", "shells"]:
+            if state.phase is None:
+                raise CheckFailed("no phase in progress")
+            if state.phase.round is None:
+                raise CheckFailed("no round in progress")
+            print("known shells:", format_theory(state.phase.round.known_shells))
+
+        case ["!check", "theories", "=", _expected_num_theories]:
+            if state.phase is None:
+                raise CheckFailed("no phase in progress")
+            if state.phase.round is None:
+                raise CheckFailed("no round in progress")
+            expected_num_theories = int(_expected_num_theories)
+            if expected_num_theories != len(state.phase.round.dealer_known_shells_theories):
+                raise CheckFailed(f"actually, we're still considering {expected_num_theories} theories")
+
         case ["!check", expected_winner_name, "charges", "=", _expected_value]:
             expected_value = int(_expected_value)
             if state.phase is None:
@@ -397,6 +423,15 @@ def parse_logfile(f):
             raise e
     print(f"{f.name} ok", file=sys.stderr)
     return game_state
+
+
+def format_theory(theory: KnownShells, depth=0) -> str:
+    if not theory:
+        return "nothing"
+    return ", ".join(
+        f'{"\t" * depth}turn {i} is {'live' if is_live else 'blank'}'
+        for i, is_live in theory.items()
+    )
 
 
 def parse_args():

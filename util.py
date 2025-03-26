@@ -55,3 +55,5 @@ def print_before(s: str, xs: Iterable[T]) -> Iterable[T]:
 def indent_before(xs: Iterable[T], *, depth: int) -> Iterable[T]:
     if depth >= 0:
         yield from print_before(f"\n{"\t|" * depth} ", xs)
+    else:
+        yield from xs
