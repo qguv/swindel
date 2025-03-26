@@ -479,7 +479,9 @@ class PhaseState:
 
         return theories_by_target
 
-    def raw_shoot(self, target_name, is_live, eliminate_nonpredictive_theories=True):
+    def raw_shoot(self, target_name, is_live, eliminate_nonpredictive_theories=True) -> bool:
+        '''if the last move was sub-optimal, returns True'''
+        was_move_suboptimal = False
 
         # check if this is possible given what we know
         self.round.assert_future_shell(0, is_live)
@@ -489,10 +491,10 @@ class PhaseState:
             theories_by_target = self.theories_by_predicted_target()
             self.round.dealer_known_shells_theories = theories_by_target[target_name] + theories_by_target[None]
             if not self.round.dealer_known_shells_theories:
-                # return the null theory to maintain the invariant
+                was_move_suboptimal = True
+                # replace the null theory to maintain the invariant
                 self.round.dealer_known_shells_theories.append({})
-                print("WARNING: the dealer is not playing optimally, so all bets are off")
-                sys.exit() # DEBUG
+                print("[WARNING: the dealer is not playing optimally, so all bets are off] ", end='')
 
         if is_live:
 
@@ -510,17 +512,18 @@ class PhaseState:
                     self.players[target_name].is_critical = True
 
         self.eject_shell(is_live)
-        if not self.round:
-            return
+        if self.round:
 
-        # advance turn
-        shooter_name = "player" if self.round.is_players_turn else "dealer"
-        if shooter_name != target_name or is_live:
-            next_player = "dealer" if self.round.is_players_turn else "player"
-            try:
-                self.round.handcuffed_player_names.remove(next_player)
-            except KeyError:
-                self.round.is_players_turn = not self.round.is_players_turn
+            # advance turn
+            shooter_name = "player" if self.round.is_players_turn else "dealer"
+            if shooter_name != target_name or is_live:
+                next_player = "dealer" if self.round.is_players_turn else "player"
+                try:
+                    self.round.handcuffed_player_names.remove(next_player)
+                except KeyError:
+                    self.round.is_players_turn = not self.round.is_players_turn
+
+        return was_move_suboptimal
 
 
 @dataclass
@@ -533,9 +536,10 @@ class GameState:
     winner_names_by_phase: list[str] = field(default_factory=list) # just for sanity checking logs
     winner: str | None = None
     max_items: int = 8
+    was_last_move_suboptimal = False
 
     def shoot(self, target_name, is_live):
-        self.phase.raw_shoot(target_name, is_live)
+        self.was_last_move_suboptimal = self.phase.raw_shoot(target_name, is_live)
         non_target_name = "dealer" if target_name == "player" else "player"
         if self.phase.players[target_name].charges <= 0:
 

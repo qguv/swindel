@@ -236,6 +236,14 @@ def check_query_line(state: GameState, words) -> None:
             outcomes_msg = ", ".join(f"{winner} {chance*100:.2f}%" for winner, chance in zip(("player", "draw", "dealer"), outcomes))
             print(f"\nbest: {state.phase.round.current_player_name()} should shoot {target_name or 'either'} ({outcomes_msg})")
 
+        case ["!check", "stupid"]:
+            if not state.was_last_move_suboptimal:
+                raise CheckFailed("actually, last move was optimal")
+
+        case ["!check", "not", "stupid"]:
+            if state.was_last_move_suboptimal:
+                raise CheckFailed("actually, last move was sub-optimal")
+
         case ["!check", "theories"]:
             if state.phase is None:
                 raise CheckFailed("no phase in progress")

@@ -1,0 +1,11 @@
+phase I, 2 charges
+
+round I.1
+dealer gets phone
+dealer loads 3 live, 1 blank
+player shoots dealer, live
+
+!check shells = 2 live, 1 blank
+
+dealer shoots self, live
+!check not stupid

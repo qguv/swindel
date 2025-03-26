@@ -3,5 +3,4 @@ phase I, 2 charges
 round I.1
 dealer loads 1 live, 1 blank
 player shoots dealer, live
-!check shells = 1 live, 0 blank
-# error: actually, 0 live, 1 blank
+!check shells = 0 live, 1 blank
