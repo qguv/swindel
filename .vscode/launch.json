@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python Debugger: Current File with Arguments",
+            "name": "debug current .buckshot log",
             "type": "debugpy",
             "request": "launch",
             "program": "parse_log.py",
@@ -13,6 +13,14 @@
             "args": "\"${file}\"",
             //"args": "example_logs/odds.buckshot",
             //"args": "${command:pickArgs}",
-        }
+        },
+        {
+            "name": "debug tests",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "test.py",
+            "console": "integratedTerminal",
+            //"args": "${command:pickArgs}",
+        },
     ]
 }
