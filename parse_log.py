@@ -237,12 +237,12 @@ def check_query_line(state: GameState, words) -> None:
             print(f"\nbest: {state.phase.round.current_player_name()} should shoot {target_name or 'either'} ({outcomes_msg})")
 
         case ["!check", "stupid"]:
-            if not state.was_last_move_suboptimal:
-                raise CheckFailed("actually, last move was optimal")
+            if not state.has_dealer_moved_suboptimally:
+                raise CheckFailed("actually, the dealer's play has been optimal")
 
         case ["!check", "not", "stupid"]:
-            if state.was_last_move_suboptimal:
-                raise CheckFailed("actually, last move was sub-optimal")
+            if state.has_dealer_moved_suboptimally:
+                raise CheckFailed("actually, the dealer made a sub-optimal move")
 
         case ["!check", "theories"]:
             if state.phase is None:

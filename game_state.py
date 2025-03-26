@@ -115,7 +115,7 @@ class RoundState:
 
     def eliminate_dealer_known_shells_theories_contradictions(self, turn_i: int, shell_type: ShellType):
         '''once we learn that a particular round is/was loaded for a turn, we can eliminate theories that contradict this'''
-        # FIXME: also call this when we can deduce a future round with certainty by counting rounds
+        # TODO: also call this when we can deduce a future round with certainty by counting rounds
         num_theories_before = len(self.dealer_known_shells_theories)
         num_theories_after = remove_unless(self.dealer_known_shells_theories, lambda t: t.get(turn_i, shell_type) == shell_type)
         num_theories_eliminated = num_theories_before - num_theories_after
@@ -226,7 +226,6 @@ class PhaseState:
                                 in a fork:
                                     clear all theories and dealer_known_shells
                                     set known_shells to the theory
-                                    # FIXME the dealer needs to keep knowing this theory though
                                     recursively call to get their best choice (ignore the odds they calculate)
                             group the theories based on the dealer's calculated optimal move
                             for each move group:
@@ -305,6 +304,7 @@ class PhaseState:
                             in a fork:
                                 clear all theories and dealer_known_shells
                                 set known_shells to the theory
+                                # TODO the dealer needs to keep knowing this theory though
                                 recursively call to get their best choice (ignore the odds they calculate)
                         group the theories based on the dealer's calculated optimal move
                         for each move group:
@@ -398,7 +398,6 @@ class PhaseState:
         target_weights = _calculate_target_weights(theories_by_target, result.players.keys())
 
         # remove targets that we think that the opponent thinks are impossible (epistemic)
-        # FIXME add epistemic comments to other epistemically interesting parts of code
         continuations = [
             (target_name, chance)
             for target_name, chance in target_weights.items()
@@ -536,10 +535,12 @@ class GameState:
     winner_names_by_phase: list[str] = field(default_factory=list) # just for sanity checking logs
     winner: str | None = None
     max_items: int = 8
-    was_last_move_suboptimal = False
+    has_dealer_moved_suboptimally = False
 
     def shoot(self, target_name, is_live):
-        self.was_last_move_suboptimal = self.phase.raw_shoot(target_name, is_live)
+        was_move_suboptimal = self.phase.raw_shoot(target_name, is_live)
+        if was_move_suboptimal:
+            self.has_dealer_moved_suboptimally = True
         non_target_name = "dealer" if target_name == "player" else "player"
         if self.phase.players[target_name].charges <= 0:
 
