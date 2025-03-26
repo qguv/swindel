@@ -259,8 +259,9 @@ def check_query_line(state: GameState, words) -> None:
             if state.phase.round is None:
                 raise CheckFailed("no round in progress")
             expected_num_theories = int(_expected_num_theories)
+            num_theories = len(state.phase.round.dealer_known_shells_theories)
             if expected_num_theories != len(state.phase.round.dealer_known_shells_theories):
-                raise CheckFailed(f"actually, we're still considering {expected_num_theories} theories")
+                raise CheckFailed(f"actually, we're still considering {num_theories} theories")
 
         case ["!check", expected_winner_name, "charges", "=", _expected_value]:
             expected_value = int(_expected_value)
