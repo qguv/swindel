@@ -5,7 +5,7 @@ import sys
 
 from exceptions import GameError
 from items import Items
-from util import all_about_equal_floats, all_about_equal_elementwise, elementwise_sum, remove_unless, scalar_mul
+from util import all_about_equal_floats, all_about_equal_elementwise, elementwise_sum, indent_before, remove_unless, scalar_mul
 
 # true is live, false is blank
 type ShellType = bool
@@ -255,8 +255,9 @@ class PhaseState:
         players = list(self.players.keys())
         prefs = player_preference if self.round.is_players_turn else dealer_preference
         print()
-        dprint(depth-1)
-        chances_per_target = {target: self._consider_shooting(target, depth=depth) for target in players}
+        print()
+        dprint(depth, "\breasoning:", end='')
+        chances_per_target = {target: self._consider_shooting(target, depth=depth+1) for target in indent_before(players, depth=depth+1)}
         best_target = (
             None if all_about_equal_elementwise(chances_per_target.values())
             else 'player' if prefs(chances_per_target['player']) > prefs(chances_per_target['dealer'])
@@ -268,9 +269,11 @@ class PhaseState:
         otherwise_msg = [] if best_target is None else ["vs otherwise", chances_per_target[worst_target]]
 
         player_name = self.round.current_player_name()
+        print()
+        print()
         dprint(
             depth,
-            "\b\bso",
+            "\bso",
             player_name,
             "shoots",
             (
@@ -282,7 +285,6 @@ class PhaseState:
             best_chances,
             *otherwise_msg,
         )
-        dprint(depth-1)
         return best_target, best_chances
 
     def _consider_shooting(self, target_name: PlayerName, *, depth) -> Chances:
@@ -319,11 +321,24 @@ class PhaseState:
 
         player_name = self.round.current_player_name()
 
-        dprint(depth, f"\b- if {player_name} shot {"self" if target_name == player_name else target_name}", end='')
-        return elementwise_sum(
-            scalar_mul(chance, self._consider_shooting_with(target_name, shell_type, depth=depth+1, chance=chance))
+        print(f"\b- if {player_name} shot {"self" if target_name == player_name else target_name}", end='')
+        continuations = [
+            (shell_type, chance)
             for shell_type, chance in ((LIVE_SHELL, live_chance), (BLANK_SHELL, blank_chance))
             if not all_about_equal_floats((chance, 0.0))
+        ]
+
+        # handle indentation
+        if len(continuations) > 1:
+            depth += 1
+            continuations = indent_before(continuations, depth=depth)
+            print(end=':')
+        else:
+            print(end=', ')
+
+        return elementwise_sum(
+            scalar_mul(chance, self._consider_shooting_with(target_name, shell_type, depth=depth, chance=chance))
+            for shell_type, chance in continuations
         )
 
     def _consider_shooting_with(self, target_name: PlayerName, is_live: ShellType, *, depth, chance) -> Chances:
@@ -354,39 +369,51 @@ class PhaseState:
                     sum the results, that's the outcome
         '''
         result = deepcopy(self)
-        new_depth = depth + 1
-        try:
-            result.raw_shoot(target_name, is_live, eliminate_nonpredictive_theories=False)
-        except GameError as e:
-            print('...')
-            dprint(depth, f"(the shell can't be {"live" if is_live else "blank"} because {e})")
+
+        if all_about_equal_floats((1.0, chance)):
+            print(f"the shell is {"live" if is_live else "blank"}, so", end='')
         else:
-            if all_about_equal_floats((1.0, chance)):
-                print(f", the shell is {"live" if is_live else "blank"}, then", end=' ')
-                new_depth -= 1
-            else:
-                print("...")
-                dprint(depth, f"...and the shell were {"live" if is_live else "blank"} ({chance:.1%} chance), then", end=' ')
+            print(f"if the shell were {"live" if is_live else "blank"} ({chance:.1%} chance), then", end='')
+
+        try: # DEBUG
+            result.raw_shoot(target_name, is_live, eliminate_nonpredictive_theories=False)
+        except GameError as e: # DEBUG
+            print(f"(the shell can't be {"live" if is_live else "blank"} because {e}).\nthis is a bug and should not happen!") # DEBUG
+            sys.exit(1) # DEBUG
 
         if (not result.round) or self.round.is_players_turn == result.round.is_players_turn:
             # either the round is over and we can reuse the base case from the outermost function,
-            # or it's the same player's turn and we can just continue reasoning
-            _, chances = result.best_move(depth=new_depth)
+            # or the player shot themself with a blank, so it's the same player's turn and we can just continue reasoning
+            _, chances = result.best_move(depth=depth)
             return chances
 
-        # otherwise, it's the opponent's turn
-        theories_by_target = result.theories_by_predicted_target(depth=new_depth)
+        # otherwise, the turn moves to the opponent (as usual).
+
+        # from here on, we're sure we'll have multiple lines of output, so indent everything
+        print(end=':')
+        depth += 1
+
+        theories_by_target = result.theories_by_predicted_target(depth=depth)
         target_weights = _calculate_target_weights(theories_by_target, result.players.keys())
+
+        # remove targets that we think that the opponent thinks are impossible (epistemic)
+        # FIXME add epistemic comments to other epistemically interesting parts of code
+        continuations = [
+            (target_name, chance)
+            for target_name, chance in indent_before(target_weights.items(), depth=depth)
+            if not all_about_equal_floats((chance, 0.0))
+        ]
 
         chances = elementwise_sum(
             scalar_mul(
                 chance,
                 result.consider_opponent_shooting(target_name, theories_by_target[target_name] + theories_by_target[None], depth=depth),
             )
-            for target_name, chance in target_weights.items()
-            if not all_about_equal_floats((chance, 0.0))
+            for target_name, chance in continuations
         )
-        dprint(depth, f"...but the *{self.round.current_player_name()}* figures the chances are", chances)
+
+        print()
+        dprint(depth, f"\bbut the *{self.round.current_player_name()}* figures the chances are", chances)
         return chances
 
 
@@ -425,16 +452,26 @@ class PhaseState:
         even chances to both targets. don't forget about these!
         '''
         theories_by_target = defaultdict(list)
-        for theory in self.round.dealer_known_shells_theories:
+        theories = self.round.dealer_known_shells_theories
+
+        if len(theories) > 1:
+            theories = indent_before(theories, depth=depth + 1)
+
+        for theory in theories:
+
+            # (epistemic)
+            if len(self.round.dealer_known_shells_theories) > 1:
+                print(f"dealer thinks the upcoming rounds are {theory[len(self.round.past_shells):]}, so ", end='')
+            else:
+                print(f"suppose dealer thinks the upcoming rounds are {theory[len(self.round.past_shells):]}, then:", end='')
+
             fork = deepcopy(self)
             fork.round.dealer_known_shells_theories = [{}]
             fork.round.known_shells = theory
-            best_target, _ = fork.best_move(depth=depth)
+            best_target, _ = fork.best_move(depth=depth + 1)
             # warning: this can be None! so check the None key of the result!
             theories_by_target[best_target].append(theory)
-        dprint(depth, "dealer might:")
-        # FIXME: text output indenting and spacing is wrong
-        dprint(depth+1)
+
         return theories_by_target
 
     def raw_shoot(self, target_name, is_live, eliminate_nonpredictive_theories=True):

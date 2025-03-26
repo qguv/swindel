@@ -44,3 +44,14 @@ def elementwise_sum(ts: Iterable[Iterable[T]]) -> Iterable[T]:
 
 def scalar_mul(a: T, xs: Iterable[T]) -> Iterable[T]:
     return tuple(a * x for x in xs)
+
+
+def print_before(s: str, xs: Iterable[T]) -> Iterable[T]:
+    for x in xs:
+        print(s, end='')
+        yield x
+
+
+def indent_before(xs: Iterable[T], *, depth: int) -> Iterable[T]:
+    if depth >= 0:
+        yield from print_before(f"\n{"\t|" * depth}", xs)
