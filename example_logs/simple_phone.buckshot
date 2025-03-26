@@ -1,0 +1,14 @@
+phase I, 2 charges
+
+round I.1
+dealer gets phone
+dealer loads 1 live, 2 blank
+player shoots dealer, blank
+
+!check shells = 1 live, 1 blank
+
+dealer uses phone
+# he could have seen:
+#   - next one blank (so knows that this one is live)
+#   - next one live (so knows that this one is blank)
+dealer shoots player, live

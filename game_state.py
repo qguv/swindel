@@ -130,7 +130,7 @@ class RoundState:
         self.dealer_known_shells_theories = []
 
         # suppose the dealer learned about the shell loaded for the future turn with index: suppose_learn_turn_i
-        next_turn_i = len(self.known_shells) + 1
+        next_turn_i = len(self.past_shells) + 1
         for suppose_learn_turn_i in range(next_turn_i, self.total_shells()):
 
             new_theories = []
@@ -146,6 +146,7 @@ class RoundState:
             # add updated versions of the old theories
             self.dealer_known_shells_theories.extend(old_theory | new_theory for new_theory in new_theories for old_theory in old_theories)
 
+        print("[dealer theories:", self.dealer_known_shells_theories, "] ", end='')
         self.maybe_leak_dealer_info()
 
 
@@ -226,6 +227,7 @@ class PhaseState:
                                 in a fork:
                                     clear all theories and dealer_known_shells
                                     set known_shells to the theory
+                                    # FIXME the dealer needs to keep knowing this theory though
                                     recursively call to get their best choice (ignore the odds they calculate)
                             group the theories based on the dealer's calculated optimal move
                             for each move group:
