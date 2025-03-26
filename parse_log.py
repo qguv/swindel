@@ -73,7 +73,7 @@ class NoSuchPlayer(LogParseError):
 
 
 class WrongPhase(LogParseError):
-    '''log refers to a nonexistent player'''
+    '''round declared in an incorrect phase'''
     def __init__(self, phase_name, *args, **kwargs):
         msg = f"expected a round in phase {phase_name}"
         super().__init__(msg, *args, **kwargs)
@@ -417,7 +417,7 @@ def parse_game_line(old_state: GameState, words) -> GameState:
     return new_state
 
 
-def parse_logfile(f):
+def parse_logfile(f) -> GameState | None:
     game_state = GameState(player_names=["player", "dealer"])
     for i, line in enumerate(f):
         try:
