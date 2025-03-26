@@ -118,9 +118,9 @@ class RoundState:
         # FIXME: also call this when we can deduce a future round with certainty by counting rounds
         num_theories_before = len(self.dealer_known_shells_theories)
         num_theories_after = remove_unless(self.dealer_known_shells_theories, lambda t: t.get(turn_i, shell_type) == shell_type)
-        num_theories_eliminated = num_theories_after - num_theories_before
+        num_theories_eliminated = num_theories_before - num_theories_after
         if num_theories_eliminated:
-            print("eliminated", num_theories_eliminated, "theories about the dealer's knowledge!", num_theories_after, "remaining") # DEBUG
+            print("[eliminated", num_theories_eliminated, "theories about the dealer's knowledge!", num_theories_after, "remaining] ", end='') # DEBUG
         # maybe glean information from this
         self.maybe_leak_dealer_info()
 
@@ -243,20 +243,22 @@ class PhaseState:
         return that target
         '''
         if self.players["dealer"].charges <= 0:
-            print("player wins") # DEBUG
+            print("player wins", end='') # DEBUG
             return (None, (1.0, 0.0, 0.0))
         if self.players["player"].charges <= 0:
-            print("dealer wins") # DEBUG
+            print("dealer wins", end='') # DEBUG
             return (None, (0.0, 0.0, 1.0))
         if self.round is None:
-            print("it's a tie") # DEBUG
+            print("it's a tie", end='') # DEBUG
             return (None, (0.0, 1.0, 0.0))
+
+        # from here, we're guaranteed to have >1 line of output at this indentation level
+        print()
+        dprint(depth-1)
+        dprint(depth, f"\b\bthe {self.round.current_player_name()} reasons that:", end='')
 
         players = list(self.players.keys())
         prefs = player_preference if self.round.is_players_turn else dealer_preference
-        print()
-        print()
-        dprint(depth, "\breasoning:", end='')
         chances_per_target = {target: self._consider_shooting(target, depth=depth+1) for target in indent_before(players, depth=depth+1)}
         best_target = (
             None if all_about_equal_elementwise(chances_per_target.values())
@@ -265,17 +267,16 @@ class PhaseState:
         )
         best_chances = chances_per_target[best_target or 'dealer']
 
+        # just printing
         worst_target = "dealer" if best_target == "player" else "player"
         otherwise_msg = [] if best_target is None else ["vs otherwise", chances_per_target[worst_target]]
-
         player_name = self.round.current_player_name()
-        print()
         print()
         dprint(
             depth,
-            "\bso",
+            "\b\bso",
             player_name,
-            "shoots",
+            "will shoot",
             (
                 "either" if best_target is None
                 else "self" if player_name == best_target
@@ -285,6 +286,8 @@ class PhaseState:
             best_chances,
             *otherwise_msg,
         )
+        dprint(depth-1)
+
         return best_target, best_chances
 
     def _consider_shooting(self, target_name: PlayerName, *, depth) -> Chances:
@@ -371,9 +374,9 @@ class PhaseState:
         result = deepcopy(self)
 
         if all_about_equal_floats((1.0, chance)):
-            print(f"the shell is {"live" if is_live else "blank"}, so", end='')
+            print(f"the shell is {"live" if is_live else "blank"}, so ", end='')
         else:
-            print(f"if the shell were {"live" if is_live else "blank"} ({chance:.1%} chance), then", end='')
+            print(f"if the shell were {"live" if is_live else "blank"} ({chance:.1%} chance), then ", end='')
 
         try: # DEBUG
             result.raw_shoot(target_name, is_live, eliminate_nonpredictive_theories=False)
@@ -384,36 +387,33 @@ class PhaseState:
         if (not result.round) or self.round.is_players_turn == result.round.is_players_turn:
             # either the round is over and we can reuse the base case from the outermost function,
             # or the player shot themself with a blank, so it's the same player's turn and we can just continue reasoning
-            _, chances = result.best_move(depth=depth)
+            _, chances = result.best_move(depth=depth+1)
             return chances
 
         # otherwise, the turn moves to the opponent (as usual).
-
         # from here on, we're sure we'll have multiple lines of output, so indent everything
-        print(end=':')
-        depth += 1
 
-        theories_by_target = result.theories_by_predicted_target(depth=depth)
+        theories_by_target = result.theories_by_predicted_target(depth=depth+1)
         target_weights = _calculate_target_weights(theories_by_target, result.players.keys())
 
         # remove targets that we think that the opponent thinks are impossible (epistemic)
         # FIXME add epistemic comments to other epistemically interesting parts of code
         continuations = [
             (target_name, chance)
-            for target_name, chance in indent_before(target_weights.items(), depth=depth)
+            for target_name, chance in target_weights.items()
             if not all_about_equal_floats((chance, 0.0))
         ]
 
         chances = elementwise_sum(
             scalar_mul(
                 chance,
-                result.consider_opponent_shooting(target_name, theories_by_target[target_name] + theories_by_target[None], depth=depth),
+                result.consider_opponent_shooting(target_name, theories_by_target[target_name] + theories_by_target[None], depth=depth+1),
             )
-            for target_name, chance in continuations
+            for target_name, chance in indent_before(continuations, depth=depth+1)
         )
 
-        print()
-        dprint(depth, f"\bbut the *{self.round.current_player_name()}* figures the chances are", chances)
+        print('\r')
+        dprint(depth+1, f"\b\bbut the *{self.round.current_player_name()}* figures the chances are", chances, end='')
         return chances
 
 
@@ -454,21 +454,25 @@ class PhaseState:
         theories_by_target = defaultdict(list)
         theories = self.round.dealer_known_shells_theories
 
+        next_depth = depth
         if len(theories) > 1:
-            theories = indent_before(theories, depth=depth + 1)
+            next_depth += 1
+            theories = indent_before(theories, depth=next_depth)
 
         for theory in theories:
 
+            theory_msg = f"the shells {theory}" if theory else "nothing"
+
             # (epistemic)
             if len(self.round.dealer_known_shells_theories) > 1:
-                print(f"dealer thinks the upcoming rounds are {theory[len(self.round.past_shells):]}, so ", end='')
+                print(f"suppose dealer knows {theory_msg}, then ", end='')
             else:
-                print(f"suppose dealer thinks the upcoming rounds are {theory[len(self.round.past_shells):]}, then:", end='')
+                print(f"dealer knows {theory_msg}, so ", end='')
 
             fork = deepcopy(self)
             fork.round.dealer_known_shells_theories = [{}]
             fork.round.known_shells = theory
-            best_target, _ = fork.best_move(depth=depth + 1)
+            best_target, _ = fork.best_move(depth=next_depth)
             # warning: this can be None! so check the None key of the result!
             theories_by_target[best_target].append(theory)
 

@@ -234,7 +234,7 @@ def check_query_line(state: GameState, words) -> None:
                 raise CheckFailed("no round in progress")
             target_name, outcomes = state.phase.best_move()
             outcomes_msg = ", ".join(f"{winner} {chance*100:.2f}%" for winner, chance in zip(("player", "draw", "dealer"), outcomes))
-            print(f"best: {state.phase.round.current_player_name()} should shoot {target_name or 'either'} ({outcomes_msg})")
+            print(f"\nbest: {state.phase.round.current_player_name()} should shoot {target_name or 'either'} ({outcomes_msg})")
 
         case ["!check", expected_winner_name, "charges", "=", _expected_value]:
             expected_value = int(_expected_value)
