@@ -11,13 +11,10 @@ error_tests = set(errors_dir.rglob('*.buckshot'))
 
 ok_tests = all_tests.difference(error_tests)
 
-HLINE = '-' * 80
-DOUBLE_HLINE = '=' * 80
-
 for f in ok_tests:
-    print(HLINE)
+    print('-' * len(str(f)))
     print(f)
-    print(HLINE)
+    print('-' * len(str(f)))
     print()
     gs = parse_logfile(f.open('r'))
     if gs is None:
@@ -25,13 +22,13 @@ for f in ok_tests:
         sys.exit(1)
     print()
 
-print(DOUBLE_HLINE)
+print('=' * 80)
 print()
 
 for f in error_tests:
-    print(HLINE)
+    print('-' * len(str(f)))
     print(f)
-    print(HLINE)
+    print('-' * len(str(f)))
     print()
     gs = parse_logfile(f.open('r'))
     if gs is None:
@@ -41,6 +38,6 @@ for f in error_tests:
         sys.exit(1)
     print()
 
-print(DOUBLE_HLINE)
+print('=' * 80)
 print()
 print("all tests passed!")
