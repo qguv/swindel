@@ -156,7 +156,7 @@ class RoundState:
         for turn_i in range(self.total_shells()):
             for shell_type in (LIVE_SHELL, BLANK_SHELL):
                 if self.dealer_knows_that(turn_i, shell_type):
-                    print(f"HEY! we deduced that the dealer learned that the {turn_i}th shell is {'live' if shell_type else 'blank'}!")
+                    print(f"[HEY! we deduced that the dealer learned that the {turn_i}th shell is {'live' if shell_type else 'blank'}!] ", end='')
                     self.known_shells[turn_i] = shell_type
 
 
